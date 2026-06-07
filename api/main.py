@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 
+from config import WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE
 from storage import db, init_db, save_utterance
 from storage import vector_store
 from transcription.engine import TranscriptionEngine, TranscriptChunk

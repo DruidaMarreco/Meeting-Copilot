@@ -16,6 +16,7 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 from faster_whisper import WhisperModel
+from config import WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, WHISPER_LANGUAGE
 
 
 SAMPLE_RATE = 16000
@@ -42,11 +43,11 @@ class TranscriptionEngine:
 
     def __init__(
         self,
-        model_size: str = "small",
-        device: str = "cpu",
-        compute_type: str = "int8",
+        model_size: str = WHISPER_MODEL_SIZE,
+        device: str = WHISPER_DEVICE,
+        compute_type: str = WHISPER_COMPUTE_TYPE,
         on_transcript: Optional[Callable[[TranscriptChunk], None]] = None,
-        language: str = "en",
+        language: str = WHISPER_LANGUAGE,
     ):
         print(f"[transcription] Loading faster-whisper {model_size} ({device}/{compute_type})…")
         self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
