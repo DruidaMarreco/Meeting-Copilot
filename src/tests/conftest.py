@@ -4,6 +4,9 @@ Stub heavy, platform-specific dependencies before any test module is imported.
 Applies to all test suites (unit_testing, integration_testing, mass_testing).
 This lets the suites run without GPU, audio hardware, a running Ollama server,
 or the full chromadb/faster-whisper install.
+
+numpy is NOT stubbed — it is installed as a real dev dependency so that
+audio and numeric tests can assert on actual computed values.
 """
 
 import sys
@@ -22,5 +25,4 @@ _stub(
     "faster_whisper",
     "ollama",
     "sounddevice",
-    "numpy",
 )
