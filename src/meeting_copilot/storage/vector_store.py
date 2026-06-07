@@ -10,14 +10,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import chromadb
-
 CHROMA_PATH = Path(__file__).parent.parent / "data" / "chroma"
 
 
-def _client() -> chromadb.PersistentClient:
+def _chromadb():
+    """Lazy-import chromadb so the server starts without it installed."""
+    try:
+        import chromadb as _chroma  # noqa: PLC0415
+
+        return _chroma
+    except ImportError as exc:
+        raise RuntimeError("chromadb is not installed. Run: uv sync --extra full") from exc
+
+
+def _client():
     CHROMA_PATH.mkdir(parents=True, exist_ok=True)
-    return chromadb.PersistentClient(path=str(CHROMA_PATH))
+    return _chromadb().PersistentClient(path=str(CHROMA_PATH))
 
 
 def _collection_name(session_id: str) -> str:

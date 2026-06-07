@@ -16,10 +16,19 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-import ollama
-
 from meeting_copilot.config import OLLAMA_MODEL
 from meeting_copilot.storage import db, vector_store
+
+
+def _ollama():
+    """Lazy-import ollama so the server starts without it installed."""
+    try:
+        import ollama as _ollama_mod  # noqa: PLC0415
+
+        return _ollama_mod
+    except ImportError as exc:
+        raise RuntimeError("ollama is not installed. Run: uv sync --extra full") from exc
+
 
 DEFAULT_MODEL = OLLAMA_MODEL
 CONTEXT_WINDOW_SECONDS = 300  # last 5 minutes always included
@@ -92,12 +101,12 @@ def answer(
     if stream:
 
         def _stream_gen():
-            for chunk in ollama.chat(model=model, messages=messages, stream=True):
+            for chunk in _ollama().chat(model=model, messages=messages, stream=True):
                 yield _extract_content(chunk)
 
         return _stream_gen()
     else:
-        return _extract_content(ollama.chat(model=model, messages=messages))
+        return _extract_content(_ollama().chat(model=model, messages=messages))
 
 
 SUMMARY_PROMPT = """You are a meeting assistant. Summarize the following meeting transcript.
@@ -131,18 +140,18 @@ def summarize(
     if stream:
 
         def _stream_gen():
-            for chunk in ollama.chat(model=model, messages=messages, stream=True):
+            for chunk in _ollama().chat(model=model, messages=messages, stream=True):
                 yield _extract_content(chunk)
 
         return _stream_gen()
     else:
-        return _extract_content(ollama.chat(model=model, messages=messages))
+        return _extract_content(_ollama().chat(model=model, messages=messages))
 
 
 def check_ollama(model: str = DEFAULT_MODEL) -> bool:
     """Return True if Ollama is running and the requested model is available."""
     try:
-        response = ollama.list()
+        response = _ollama().list()
         # SDK >=0.3: ListResponse with .models (list of Model objects, .model attr)
         # SDK <0.3:  dict with "models" key (list of dicts with "name" key)
         if hasattr(response, "models"):
