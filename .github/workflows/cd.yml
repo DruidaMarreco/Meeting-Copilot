@@ -1,0 +1,39 @@
+name: Deploy
+
+# ── Placeholder — no deployment target defined yet ───────────────────────────
+#
+# This workflow triggers on merge to main but every job is gated behind
+# `if: false` until a deployment target exists.
+#
+# When ready, replace the placeholder job with the real deploy steps and
+# set the required secrets (e.g. SERVER_HOST, SSH_KEY, DOCKER_REGISTRY).
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    if: false  # placeholder — remove when deployment is configured
+
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        run: |
+          echo "Deployment not yet configured."
+          echo "Add steps here: build Docker image, push to registry, SSH deploy, etc."
+        # Example steps to uncomment when ready:
+        # - uses: docker/login-action@v3
+        #   with:
+        #     registry: ghcr.io
+        #     username: ${{ github.actor }}
+        #     password: ${{ secrets.GITHUB_TOKEN }}
+        # - run: docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
+        # - run: docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
