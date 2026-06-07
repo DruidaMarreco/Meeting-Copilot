@@ -17,6 +17,7 @@
       --text-muted: #6b7280;
       --green: #34d399;
       --red: #f87171;
+      --orange: #fb923c;
       --answer-bg: #1e2a1e;
       --answer-border: #2d4a2d;
     }
@@ -44,52 +45,59 @@
     }
     .logo { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
     .logo span { color: var(--accent); }
-    .status-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--text-muted); display: inline-block;
-      margin-right: 6px; transition: background 0.3s;
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    .status-pill {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--text-muted);
     }
-    .status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
-    #status-label { font-size: 12px; color: var(--text-muted); }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-muted); flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .dot.live    { background: var(--green);  box-shadow: 0 0 6px var(--green); }
+    .dot.ok      { background: var(--green); }
+    .dot.warn    { background: var(--orange); }
+    .dot.offline { background: var(--red); }
 
     /* ── Controls ── */
     .controls {
-      display: flex; gap: 10px; padding: 14px 20px;
+      display: flex; gap: 10px; padding: 12px 20px;
       border-bottom: 1px solid var(--border);
       flex-shrink: 0; align-items: center; flex-wrap: wrap;
     }
+    input[type="text"] {
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 12px; font-size: 13px; flex: 1; min-width: 160px; max-width: 300px;
+      outline: none; transition: border-color 0.15s;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+    input[type="text"]::placeholder { color: var(--text-muted); }
     button {
       border: none; border-radius: 6px; padding: 8px 16px;
       font-size: 13px; font-weight: 500; cursor: pointer;
-      transition: all 0.15s;
+      transition: all 0.15s; white-space: nowrap;
     }
-    #btn-start {
-      background: var(--accent); color: white;
-    }
+    #btn-start { background: var(--accent); color: white; }
     #btn-start:hover { background: var(--accent-hover); }
     #btn-start:disabled { opacity: 0.4; cursor: not-allowed; }
-    #btn-end {
-      background: #3a1a1a; color: var(--red); border: 1px solid #5a2a2a;
-    }
+    #btn-end { background: #3a1a1a; color: var(--red); border: 1px solid #5a2a2a; }
     #btn-end:hover { background: #4a2020; }
     #btn-end:disabled { opacity: 0.4; cursor: not-allowed; }
     #session-info { font-size: 12px; color: var(--text-muted); margin-left: auto; }
 
     /* ── Body ── */
-    .body {
-      display: flex; flex: 1; overflow: hidden;
-    }
+    .body { display: flex; flex: 1; overflow: hidden; }
 
-    /* ── Transcript ── */
+    /* ── Transcript / history pane ── */
     .transcript-pane {
       flex: 1; overflow-y: auto; padding: 20px;
       display: flex; flex-direction: column; gap: 8px;
     }
     .utterance {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 14px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px;
       animation: fadeIn 0.2s ease;
     }
     .utterance .time {
@@ -97,6 +105,34 @@
       margin-bottom: 4px; font-variant-numeric: tabular-nums;
     }
     .utterance .text { line-height: 1.5; }
+
+    /* ── Session history ── */
+    .history-header {
+      font-size: 12px; color: var(--text-muted);
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+      padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+    }
+    .session-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 14px;
+      cursor: pointer; transition: border-color 0.15s, background 0.15s;
+      animation: fadeIn 0.2s ease;
+    }
+    .session-item:hover { border-color: var(--accent); background: #1f2336; }
+    .session-item .s-title { font-weight: 500; margin-bottom: 3px; }
+    .session-item .s-meta { font-size: 12px; color: var(--text-muted); }
+    .session-item .s-badge {
+      display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px;
+      border-radius: 4px; margin-left: 8px; vertical-align: middle;
+    }
+    .s-badge.ongoing { background: #1e3a1e; color: var(--green); }
+    .s-badge.ended   { background: #1a1d27; color: var(--text-muted); }
+
+    .view-back {
+      font-size: 12px; color: var(--accent); cursor: pointer;
+      margin-bottom: 12px; display: inline-block;
+    }
+    .view-back:hover { color: var(--accent-hover); }
 
     /* ── Answer panel ── */
     .answer-pane {
@@ -117,16 +153,13 @@
       display: flex; flex-direction: column; gap: 12px;
     }
     .answer-card {
-      background: var(--answer-bg);
-      border: 1px solid var(--answer-border);
+      background: var(--answer-bg); border: 1px solid var(--answer-border);
       border-radius: 8px; padding: 12px;
       animation: fadeIn 0.2s ease;
     }
-    .answer-card .q {
-      font-size: 12px; color: var(--green); margin-bottom: 6px;
-      font-style: italic;
-    }
+    .answer-card .q { font-size: 12px; color: var(--green); margin-bottom: 6px; font-style: italic; }
     .answer-card .a { font-size: 13px; line-height: 1.5; }
+    .cursor { display: inline-block; color: var(--accent); animation: blink 1s step-end infinite; }
 
     /* ── PTT Button ── */
     .ptt-area {
@@ -135,20 +168,23 @@
     }
     #btn-ptt {
       width: 64px; height: 64px; border-radius: 50%;
-      background: var(--accent);
-      color: white; font-size: 24px;
-      border: 3px solid transparent;
-      transition: all 0.15s;
+      background: var(--accent); color: white; font-size: 24px;
+      border: 3px solid transparent; transition: all 0.15s;
       display: flex; align-items: center; justify-content: center;
     }
     #btn-ptt:hover { background: var(--accent-hover); transform: scale(1.05); }
-    #btn-ptt.recording {
-      background: var(--red);
-      border-color: #ff9999;
-      animation: pulse 1s infinite;
-    }
+    #btn-ptt.recording { background: var(--red); border-color: #ff9999; animation: pulse 1s infinite; }
     #btn-ptt:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
     .ptt-hint { font-size: 11px; color: var(--text-muted); text-align: center; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #2a1a1a; color: var(--red); border: 1px solid #5a2a2a;
+      border-radius: 8px; padding: 10px 18px; font-size: 13px;
+      animation: fadeIn 0.2s ease;
+      z-index: 999;
+    }
 
     /* ── Empty state ── */
     .empty {
@@ -159,10 +195,8 @@
     .empty .icon { font-size: 40px; }
     .empty .title { font-size: 15px; font-weight: 500; color: var(--text); }
 
-    .cursor { display: inline-block; color: var(--accent); animation: blink 1s step-end infinite; }
-
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-    @keyframes pulse  { 0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); } 50% { box-shadow: 0 0 0 10px rgba(248, 113, 113, 0); } }
+    @keyframes pulse  { 0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.4); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
     @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
   </style>
 </head>
@@ -170,32 +204,33 @@
 
 <header>
   <div class="logo">Meeting <span>Copilot</span></div>
-  <div>
-    <span class="status-dot" id="dot"></span>
-    <span id="status-label">Not recording</span>
+  <div class="header-right">
+    <div class="status-pill">
+      <span class="dot" id="ollama-dot"></span>
+      <span id="ollama-label">Ollama…</span>
+    </div>
+    <div class="status-pill">
+      <span class="dot" id="rec-dot"></span>
+      <span id="rec-label">Not recording</span>
+    </div>
   </div>
 </header>
 
 <div class="controls">
-  <button id="btn-start">▶ Start Meeting</button>
-  <button id="btn-end" disabled>■ End Meeting</button>
+  <input type="text" id="meeting-title" placeholder="Meeting title (optional)" maxlength="80" />
+  <button id="btn-start">▶ Start</button>
+  <button id="btn-end" disabled>■ End</button>
   <span id="session-info"></span>
 </div>
 
 <div class="body">
-  <div class="transcript-pane" id="transcript">
-    <div class="empty">
-      <div class="icon">🎙️</div>
-      <div class="title">No transcript yet</div>
-      <div>Start a meeting to begin transcribing</div>
-    </div>
-  </div>
+  <div class="transcript-pane" id="transcript"></div>
 
   <div class="answer-pane">
     <h3>Q&amp;A</h3>
     <div class="answers-list" id="answers">
-      <div class="empty" style="height:100%; padding: 20px; text-align:center; color: var(--text-muted); font-size:13px;">
-        Hold the mic button to ask a question about the meeting
+      <div class="empty" style="height:100%; padding:20px; color:var(--text-muted); font-size:13px; text-align:center;">
+        Hold the mic button to ask a question
       </div>
     </div>
     <div class="ptt-area">
@@ -211,43 +246,149 @@
   let ws = null;
   let mediaRecorder = null;
   let audioChunks = [];
-  const pendingAnswers = {};  // answer_id → <div class="a"> element
+  const pendingAnswers = {};
 
-  const btnStart = document.getElementById("btn-start");
-  const btnEnd   = document.getElementById("btn-end");
-  const btnPtt   = document.getElementById("btn-ptt");
-  const dot      = document.getElementById("dot");
-  const statusLabel = document.getElementById("status-label");
+  const btnStart    = document.getElementById("btn-start");
+  const btnEnd      = document.getElementById("btn-end");
+  const btnPtt      = document.getElementById("btn-ptt");
+  const recDot      = document.getElementById("rec-dot");
+  const recLabel    = document.getElementById("rec-label");
+  const ollamaDot   = document.getElementById("ollama-dot");
+  const ollamaLabel = document.getElementById("ollama-label");
   const sessionInfo = document.getElementById("session-info");
   const transcript  = document.getElementById("transcript");
   const answers     = document.getElementById("answers");
+  const titleInput  = document.getElementById("meeting-title");
 
-  function setStatus(live, label) {
-    dot.className = "status-dot" + (live ? " live" : "");
-    statusLabel.textContent = label;
+  // ── Init ───────────────────────────────────────────────────────────────────
+  checkHealth();
+  loadPastSessions();
+
+  // ── Health / Ollama status ─────────────────────────────────────────────────
+  async function checkHealth() {
+    try {
+      const res = await fetch(`${API}/health`);
+      const data = await res.json();
+      if (data.ollama_available) {
+        ollamaDot.className = "dot ok";
+        ollamaLabel.textContent = "Ollama ✓";
+      } else {
+        ollamaDot.className = "dot warn";
+        ollamaLabel.textContent = "Ollama unavailable";
+      }
+    } catch {
+      ollamaDot.className = "dot offline";
+      ollamaLabel.textContent = "Server offline";
+    }
+  }
+
+  // ── Session history ────────────────────────────────────────────────────────
+  async function loadPastSessions() {
+    if (sessionId) return;
+    try {
+      const res = await fetch(`${API}/meeting/list`);
+      const data = await res.json();
+      showSessionHistory(data.sessions || []);
+    } catch {
+      showEmptyState();
+    }
+  }
+
+  function showEmptyState() {
+    transcript.innerHTML = `
+      <div class="empty">
+        <div class="icon">🎙️</div>
+        <div class="title">No meetings yet</div>
+        <div>Start a meeting to begin transcribing</div>
+      </div>`;
+  }
+
+  function showSessionHistory(sessions) {
+    if (sessionId) return;
+    transcript.innerHTML = "";
+
+    if (!sessions.length) { showEmptyState(); return; }
+
+    const header = document.createElement("div");
+    header.className = "history-header";
+    header.textContent = "Past meetings";
+    transcript.appendChild(header);
+
+    const sorted = [...sessions].sort((a, b) =>
+      (b.started_at || "").localeCompare(a.started_at || "")
+    );
+
+    sorted.forEach(s => {
+      const item = document.createElement("div");
+      item.className = "session-item";
+      const date = s.started_at ? new Date(s.started_at.replace(" ", "T") + "Z").toLocaleString() : "—";
+      const badge = s.ended_at
+        ? `<span class="s-badge ended">ended</span>`
+        : `<span class="s-badge ongoing">live</span>`;
+      item.innerHTML = `
+        <div class="s-title">${escHtml(s.title)}${badge}</div>
+        <div class="s-meta">${date}</div>`;
+      item.addEventListener("click", () => loadSession(s.id, s.title));
+      transcript.appendChild(item);
+    });
+  }
+
+  async function loadSession(id, title) {
+    if (sessionId) return;
+    try {
+      const res = await fetch(`${API}/meeting/${id}/transcript`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      transcript.innerHTML = "";
+      const back = document.createElement("span");
+      back.className = "view-back";
+      back.textContent = "← Past meetings";
+      back.addEventListener("click", loadPastSessions);
+      transcript.appendChild(back);
+
+      const h = document.createElement("div");
+      h.style.cssText = "font-weight:600; margin-bottom:12px; font-size:15px;";
+      h.textContent = title;
+      transcript.appendChild(h);
+
+      if (!data.utterances.length) {
+        const e = document.createElement("div");
+        e.className = "empty";
+        e.style.height = "200px";
+        e.textContent = "No transcript recorded for this session";
+        transcript.appendChild(e);
+        return;
+      }
+      data.utterances.forEach(u => addUtterance(u));
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   // ── Start ──────────────────────────────────────────────────────────────────
   btnStart.addEventListener("click", async () => {
     btnStart.disabled = true;
-    setStatus(false, "Starting…");
+    setRecStatus(false, "Starting…");
+    await checkHealth();
     try {
+      const title = titleInput.value.trim() || null;
       const res = await fetch(`${API}/meeting/start`, {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({title: null}),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
       });
       const data = await res.json();
       sessionId = data.session_id;
 
       btnEnd.disabled = false;
       btnPtt.disabled = false;
-      setStatus(true, "Recording");
+      titleInput.disabled = true;
+      setRecStatus(true, "Recording");
       sessionInfo.textContent = `Session: ${sessionId.slice(0, 8)}`;
       transcript.innerHTML = "";
       answers.innerHTML = "";
 
-      // Open WebSocket
       ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
@@ -256,11 +397,11 @@
         if (msg.type === "answer_token") appendToken(msg);
         if (msg.type === "answer_end")   finalizeAnswer(msg);
       };
-      ws.onerror = () => setStatus(true, "Recording (WS error)");
-    } catch (e) {
-      setStatus(false, "Error — is the server running?");
+      ws.onerror = () => setRecStatus(true, "Recording (WS error)");
+    } catch {
+      setRecStatus(false, "Error — is the server running?");
       btnStart.disabled = false;
-      console.error(e);
+      titleInput.disabled = false;
     }
   });
 
@@ -269,11 +410,14 @@
     if (!sessionId) return;
     btnEnd.disabled = true;
     btnPtt.disabled = true;
+    titleInput.disabled = false;
     await fetch(`${API}/meeting/${sessionId}/end`, { method: "POST" });
     if (ws) ws.close();
-    setStatus(false, "Meeting ended");
+    setRecStatus(false, "Meeting ended");
     sessionInfo.textContent += " · ended";
     btnStart.disabled = false;
+    sessionId = null;
+    setTimeout(loadPastSessions, 400); // small delay so DB write settles
   });
 
   // ── PTT ────────────────────────────────────────────────────────────────────
@@ -307,8 +451,8 @@
       try {
         await fetch(`${API}/meeting/${sessionId}/ptt`, { method: "POST", body: form });
         // Answer streams token-by-token via WebSocket (answer_start / answer_token / answer_end)
-      } catch (e) {
-        console.error("PTT error:", e);
+      } catch {
+        showToast("Could not reach the server");
       }
       btnPtt.textContent = "🎤";
       btnPtt.disabled = false;
@@ -316,6 +460,11 @@
   }
 
   // ── Render helpers ─────────────────────────────────────────────────────────
+  function setRecStatus(live, label) {
+    recDot.className = "dot" + (live ? " live" : "");
+    recLabel.textContent = label;
+  }
+
   function fmtTime(secs) {
     const m = Math.floor(secs / 60).toString().padStart(2, "0");
     const s = Math.floor(secs % 60).toString().padStart(2, "0");
@@ -327,8 +476,7 @@
     div.className = "utterance";
     div.innerHTML = `
       <div class="time">${fmtTime(msg.start)} – ${fmtTime(msg.end)}</div>
-      <div class="text">${escHtml(msg.text)}</div>
-    `;
+      <div class="text">${escHtml(msg.text)}</div>`;
     transcript.appendChild(div);
     transcript.scrollTop = transcript.scrollHeight;
   }
@@ -374,8 +522,19 @@
     delete pendingAnswers[msg.id];
   }
 
+  function showToast(msg) {
+    const t = document.createElement("div");
+    t.className = "toast";
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3500);
+  }
+
   function escHtml(str) {
-    return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
   }
 </script>
 </body>
