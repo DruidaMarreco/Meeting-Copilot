@@ -98,3 +98,42 @@ def test_list_meetings(client):
     titles = [s["title"] for s in r.json()["sessions"]]
     assert "Alpha" in titles
     assert "Beta" in titles
+
+
+# ── PTT ───────────────────────────────────────────────────────────────────────
+
+
+def test_ptt_returns_question_and_answer_id(client):
+    """PTT endpoint transcribes audio and kicks off streaming; returns question + answer_id."""
+    import io
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+
+    fake_segment = MagicMock()
+    fake_segment.text = "What is the budget?"
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = ([fake_segment], None)
+
+    with (
+        patch("api.main._get_ptt_model", return_value=fake_model),
+        patch("api.main._stream_answer_to_ws"),  # don't actually call ollama
+    ):
+        r = client.post(
+            f"/meeting/{sid}/ptt",
+            files={"audio": ("q.wav", io.BytesIO(b"fake"), "audio/wav")},
+        )
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["question"] == "What is the budget?"
+    assert "answer_id" in data
+
+
+def test_ptt_unknown_session_returns_404(client):
+    import io
+
+    r = client.post(
+        "/meeting/00000000-0000-0000-0000-000000000000/ptt",
+        files={"audio": ("q.wav", io.BytesIO(b"fake"), "audio/wav")},
+    )
+    assert r.status_code == 404

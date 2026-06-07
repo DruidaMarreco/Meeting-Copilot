@@ -13,8 +13,10 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -50,6 +52,7 @@ def _get_ptt_model():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    websocket_manager.set_event_loop(asyncio.get_running_loop())
     init_db()
     yield
     # Cleanup: stop all active captures on shutdown
@@ -174,11 +177,36 @@ async def get_transcript(session_id: str):
     return {"session_id": session_id, "utterances": utterances}
 
 
+def _stream_answer_to_ws(session_id: str, question: str, answer_id: str) -> None:
+    """
+    Runs in a thread pool. Iterates the LLM stream and broadcasts each token
+    via WebSocket using the thread-safe broadcast_sync helper.
+    """
+    websocket_manager.broadcast_sync(
+        session_id,
+        {"type": "answer_start", "question": question, "id": answer_id},
+    )
+    try:
+        gen = llm_answer(session_id=session_id, question=question, stream=True)
+        for token in gen:
+            if token:
+                websocket_manager.broadcast_sync(
+                    session_id,
+                    {"type": "answer_token", "id": answer_id, "token": token},
+                )
+    finally:
+        websocket_manager.broadcast_sync(
+            session_id,
+            {"type": "answer_end", "id": answer_id},
+        )
+
+
 @app.post("/meeting/{session_id}/ptt")
 async def push_to_talk(session_id: str, audio: UploadFile = File(...)):
     """
     Receives an audio file (WAV/MP3/WebM) from the PTT button.
-    Transcribes the question, answers from the current meeting context.
+    Transcribes the question synchronously, then streams the LLM answer
+    token-by-token to all WebSocket clients in the background.
     """
     if session_id not in _active_sessions and not db.get_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
@@ -196,22 +224,14 @@ async def push_to_talk(session_id: str, audio: UploadFile = File(...)):
         os.unlink(tmp_path)
 
     if not question:
-        return {"question": "", "answer": "I couldn't hear that — please try again."}
+        return {"question": "", "error": "Could not transcribe audio — please try again."}
 
-    # Answer from meeting context
-    response = llm_answer(session_id=session_id, question=question)
+    # Stream answer tokens to WebSocket clients in a worker thread
+    answer_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _stream_answer_to_ws, session_id, question, answer_id)
 
-    # Broadcast to UI
-    websocket_manager.broadcast_sync(
-        session_id,
-        {
-            "type": "answer",
-            "question": question,
-            "text": response,
-        },
-    )
-
-    return {"question": question, "answer": response}
+    return {"question": question, "answer_id": answer_id}
 
 
 @app.get("/meeting/list")

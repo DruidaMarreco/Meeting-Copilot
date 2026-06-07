@@ -159,8 +159,11 @@
     .empty .icon { font-size: 40px; }
     .empty .title { font-size: 15px; font-weight: 500; color: var(--text); }
 
+    .cursor { display: inline-block; color: var(--accent); animation: blink 1s step-end infinite; }
+
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); } 50% { box-shadow: 0 0 0 10px rgba(248, 113, 113, 0); } }
+    @keyframes pulse  { 0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); } 50% { box-shadow: 0 0 0 10px rgba(248, 113, 113, 0); } }
+    @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
   </style>
 </head>
 <body>
@@ -208,6 +211,7 @@
   let ws = null;
   let mediaRecorder = null;
   let audioChunks = [];
+  const pendingAnswers = {};  // answer_id → <div class="a"> element
 
   const btnStart = document.getElementById("btn-start");
   const btnEnd   = document.getElementById("btn-end");
@@ -247,8 +251,10 @@
       ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
-        if (msg.type === "utterance") addUtterance(msg);
-        if (msg.type === "answer")    addAnswer(msg);
+        if (msg.type === "utterance")    addUtterance(msg);
+        if (msg.type === "answer_start") startAnswer(msg);
+        if (msg.type === "answer_token") appendToken(msg);
+        if (msg.type === "answer_end")   finalizeAnswer(msg);
       };
       ws.onerror = () => setStatus(true, "Recording (WS error)");
     } catch (e) {
@@ -299,11 +305,8 @@
       const form = new FormData();
       form.append("audio", blob, "question.webm");
       try {
-        const res = await fetch(`${API}/meeting/${sessionId}/ptt`, {
-          method: "POST", body: form
-        });
-        const data = await res.json();
-        if (data.answer) addAnswer({ question: data.question, text: data.answer });
+        await fetch(`${API}/meeting/${sessionId}/ptt`, { method: "POST", body: form });
+        // Answer streams token-by-token via WebSocket (answer_start / answer_token / answer_end)
       } catch (e) {
         console.error("PTT error:", e);
       }
@@ -330,18 +333,45 @@
     transcript.scrollTop = transcript.scrollHeight;
   }
 
-  function addAnswer(msg) {
-    // Remove empty state
+  function startAnswer(msg) {
     const empty = answers.querySelector(".empty");
     if (empty) empty.remove();
 
     const div = document.createElement("div");
     div.className = "answer-card";
-    div.innerHTML = `
-      <div class="q">Q: ${escHtml(msg.question || "")}</div>
-      <div class="a">${escHtml(msg.text)}</div>
-    `;
+    div.dataset.answerId = msg.id;
+
+    const q = document.createElement("div");
+    q.className = "q";
+    q.textContent = "Q: " + (msg.question || "");
+
+    const a = document.createElement("div");
+    a.className = "a";
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    cursor.textContent = "▊";
+    a.appendChild(cursor);
+
+    div.appendChild(q);
+    div.appendChild(a);
     answers.prepend(div);
+    pendingAnswers[msg.id] = a;
+  }
+
+  function appendToken(msg) {
+    const el = pendingAnswers[msg.id];
+    if (!el) return;
+    const cursor = el.querySelector(".cursor");
+    if (cursor) el.insertBefore(document.createTextNode(msg.token), cursor);
+    else el.appendChild(document.createTextNode(msg.token));
+  }
+
+  function finalizeAnswer(msg) {
+    const el = pendingAnswers[msg.id];
+    if (!el) return;
+    const cursor = el.querySelector(".cursor");
+    if (cursor) cursor.remove();
+    delete pendingAnswers[msg.id];
   }
 
   function escHtml(str) {
