@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meeting Copilot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --accent: #5b8cf7;
+      --accent-hover: #7ba3ff;
+      --text: #e8eaf0;
+      --text-muted: #6b7280;
+      --green: #34d399;
+      --red: #f87171;
+      --answer-bg: #1e2a1e;
+      --answer-border: #2d4a2d;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .logo { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
+    .logo span { color: var(--accent); }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-muted); display: inline-block;
+      margin-right: 6px; transition: background 0.3s;
+    }
+    .status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    #status-label { font-size: 12px; color: var(--text-muted); }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex; gap: 10px; padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0; align-items: center; flex-wrap: wrap;
+    }
+    button {
+      border: none; border-radius: 6px; padding: 8px 16px;
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: all 0.15s;
+    }
+    #btn-start {
+      background: var(--accent); color: white;
+    }
+    #btn-start:hover { background: var(--accent-hover); }
+    #btn-start:disabled { opacity: 0.4; cursor: not-allowed; }
+    #btn-end {
+      background: #3a1a1a; color: var(--red); border: 1px solid #5a2a2a;
+    }
+    #btn-end:hover { background: #4a2020; }
+    #btn-end:disabled { opacity: 0.4; cursor: not-allowed; }
+    #session-info { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+    /* ── Body ── */
+    .body {
+      display: flex; flex: 1; overflow: hidden;
+    }
+
+    /* ── Transcript ── */
+    .transcript-pane {
+      flex: 1; overflow-y: auto; padding: 20px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .utterance {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      animation: fadeIn 0.2s ease;
+    }
+    .utterance .time {
+      font-size: 11px; color: var(--text-muted);
+      margin-bottom: 4px; font-variant-numeric: tabular-nums;
+    }
+    .utterance .text { line-height: 1.5; }
+
+    /* ── Answer panel ── */
+    .answer-pane {
+      width: 360px; flex-shrink: 0;
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      background: var(--surface);
+    }
+    .answer-pane h3 {
+      padding: 14px 16px 10px;
+      font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .answers-list {
+      flex: 1; overflow-y: auto; padding: 12px 16px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .answer-card {
+      background: var(--answer-bg);
+      border: 1px solid var(--answer-border);
+      border-radius: 8px; padding: 12px;
+      animation: fadeIn 0.2s ease;
+    }
+    .answer-card .q {
+      font-size: 12px; color: var(--green); margin-bottom: 6px;
+      font-style: italic;
+    }
+    .answer-card .a { font-size: 13px; line-height: 1.5; }
+
+    /* ── PTT Button ── */
+    .ptt-area {
+      padding: 16px; border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    #btn-ptt {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: var(--accent);
+      color: white; font-size: 24px;
+      border: 3px solid transparent;
+      transition: all 0.15s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #btn-ptt:hover { background: var(--accent-hover); transform: scale(1.05); }
+    #btn-ptt.recording {
+      background: var(--red);
+      border-color: #ff9999;
+      animation: pulse 1s infinite;
+    }
+    #btn-ptt:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .ptt-hint { font-size: 11px; color: var(--text-muted); text-align: center; }
+
+    /* ── Empty state ── */
+    .empty {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 100%;
+      color: var(--text-muted); gap: 8px; text-align: center;
+    }
+    .empty .icon { font-size: 40px; }
+    .empty .title { font-size: 15px; font-weight: 500; color: var(--text); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); } 50% { box-shadow: 0 0 0 10px rgba(248, 113, 113, 0); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Meeting <span>Copilot</span></div>
+  <div>
+    <span class="status-dot" id="dot"></span>
+    <span id="status-label">Not recording</span>
+  </div>
+</header>
+
+<div class="controls">
+  <button id="btn-start">▶ Start Meeting</button>
+  <button id="btn-end" disabled>■ End Meeting</button>
+  <span id="session-info"></span>
+</div>
+
+<div class="body">
+  <div class="transcript-pane" id="transcript">
+    <div class="empty">
+      <div class="icon">🎙️</div>
+      <div class="title">No transcript yet</div>
+      <div>Start a meeting to begin transcribing</div>
+    </div>
+  </div>
+
+  <div class="answer-pane">
+    <h3>Q&amp;A</h3>
+    <div class="answers-list" id="answers">
+      <div class="empty" style="height:100%; padding: 20px; text-align:center; color: var(--text-muted); font-size:13px;">
+        Hold the mic button to ask a question about the meeting
+      </div>
+    </div>
+    <div class="ptt-area">
+      <button id="btn-ptt" disabled title="Hold to ask a question">🎤</button>
+      <div class="ptt-hint">Hold to ask · Release to send</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = "http://localhost:8000";
+  let sessionId = null;
+  let ws = null;
+  let mediaRecorder = null;
+  let audioChunks = [];
+
+  const btnStart = document.getElementById("btn-start");
+  const btnEnd   = document.getElementById("btn-end");
+  const btnPtt   = document.getElementById("btn-ptt");
+  const dot      = document.getElementById("dot");
+  const statusLabel = document.getElementById("status-label");
+  const sessionInfo = document.getElementById("session-info");
+  const transcript  = document.getElementById("transcript");
+  const answers     = document.getElementById("answers");
+
+  function setStatus(live, label) {
+    dot.className = "status-dot" + (live ? " live" : "");
+    statusLabel.textContent = label;
+  }
+
+  // ── Start ──────────────────────────────────────────────────────────────────
+  btnStart.addEventListener("click", async () => {
+    btnStart.disabled = true;
+    setStatus(false, "Starting…");
+    try {
+      const res = await fetch(`${API}/meeting/start`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({title: null}),
+      });
+      const data = await res.json();
+      sessionId = data.session_id;
+
+      btnEnd.disabled = false;
+      btnPtt.disabled = false;
+      setStatus(true, "Recording");
+      sessionInfo.textContent = `Session: ${sessionId.slice(0, 8)}`;
+      transcript.innerHTML = "";
+      answers.innerHTML = "";
+
+      // Open WebSocket
+      ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "utterance") addUtterance(msg);
+        if (msg.type === "answer")    addAnswer(msg);
+      };
+      ws.onerror = () => setStatus(true, "Recording (WS error)");
+    } catch (e) {
+      setStatus(false, "Error — is the server running?");
+      btnStart.disabled = false;
+      console.error(e);
+    }
+  });
+
+  // ── End ────────────────────────────────────────────────────────────────────
+  btnEnd.addEventListener("click", async () => {
+    if (!sessionId) return;
+    btnEnd.disabled = true;
+    btnPtt.disabled = true;
+    await fetch(`${API}/meeting/${sessionId}/end`, { method: "POST" });
+    if (ws) ws.close();
+    setStatus(false, "Meeting ended");
+    sessionInfo.textContent += " · ended";
+    btnStart.disabled = false;
+  });
+
+  // ── PTT ────────────────────────────────────────────────────────────────────
+  btnPtt.addEventListener("mousedown", startRecording);
+  btnPtt.addEventListener("mouseup",   stopRecording);
+  btnPtt.addEventListener("touchstart", (e) => { e.preventDefault(); startRecording(); });
+  btnPtt.addEventListener("touchend",   (e) => { e.preventDefault(); stopRecording(); });
+
+  async function startRecording() {
+    if (!sessionId) return;
+    audioChunks = [];
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+    mediaRecorder.start();
+    btnPtt.classList.add("recording");
+    btnPtt.textContent = "🔴";
+  }
+
+  async function stopRecording() {
+    if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+    mediaRecorder.stop();
+    btnPtt.classList.remove("recording");
+    btnPtt.textContent = "⏳";
+    btnPtt.disabled = true;
+
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(audioChunks, { type: "audio/webm" });
+      const form = new FormData();
+      form.append("audio", blob, "question.webm");
+      try {
+        const res = await fetch(`${API}/meeting/${sessionId}/ptt`, {
+          method: "POST", body: form
+        });
+        const data = await res.json();
+        if (data.answer) addAnswer({ question: data.question, text: data.answer });
+      } catch (e) {
+        console.error("PTT error:", e);
+      }
+      btnPtt.textContent = "🎤";
+      btnPtt.disabled = false;
+    };
+  }
+
+  // ── Render helpers ─────────────────────────────────────────────────────────
+  function fmtTime(secs) {
+    const m = Math.floor(secs / 60).toString().padStart(2, "0");
+    const s = Math.floor(secs % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  }
+
+  function addUtterance(msg) {
+    const div = document.createElement("div");
+    div.className = "utterance";
+    div.innerHTML = `
+      <div class="time">${fmtTime(msg.start)} – ${fmtTime(msg.end)}</div>
+      <div class="text">${escHtml(msg.text)}</div>
+    `;
+    transcript.appendChild(div);
+    transcript.scrollTop = transcript.scrollHeight;
+  }
+
+  function addAnswer(msg) {
+    // Remove empty state
+    const empty = answers.querySelector(".empty");
+    if (empty) empty.remove();
+
+    const div = document.createElement("div");
+    div.className = "answer-card";
+    div.innerHTML = `
+      <div class="q">Q: ${escHtml(msg.question || "")}</div>
+      <div class="a">${escHtml(msg.text)}</div>
+    `;
+    answers.prepend(div);
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+</script>
+</body>
+</html>
