@@ -32,7 +32,14 @@ from meeting_copilot.config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER
 from meeting_copilot.llm.query import answer as llm_answer
 from meeting_copilot.llm.query import check_ollama
 from meeting_copilot.llm.query import summarize as llm_summarize
-from meeting_copilot.storage import db, init_db, save_summary, save_utterance, vector_store
+from meeting_copilot.storage import (
+    db,
+    init_db,
+    save_answer,
+    save_summary,
+    save_utterance,
+    vector_store,
+)
 from meeting_copilot.storage import delete_session as db_delete_session
 from meeting_copilot.transcription.engine import TranscriptChunk, TranscriptionEngine
 
@@ -182,22 +189,27 @@ async def get_transcript(session_id: str):
 
 def _stream_answer_to_ws(session_id: str, question: str, answer_id: str) -> None:
     """
-    Runs in a thread pool. Iterates the LLM stream and broadcasts each token
-    via WebSocket using the thread-safe broadcast_sync helper.
+    Runs in a thread pool. Iterates the LLM stream, broadcasts each token via
+    WebSocket, then persists the completed answer to the database.
     """
     websocket_manager.broadcast_sync(
         session_id,
         {"type": "answer_start", "question": question, "id": answer_id},
     )
+    tokens: list[str] = []
     try:
         gen = llm_answer(session_id=session_id, question=question, stream=True)
         for token in gen:
             if token:
+                tokens.append(token)
                 websocket_manager.broadcast_sync(
                     session_id,
                     {"type": "answer_token", "id": answer_id, "token": token},
                 )
     finally:
+        full_answer = "".join(tokens)
+        if full_answer:
+            save_answer(session_id, question, full_answer)
         websocket_manager.broadcast_sync(
             session_id,
             {"type": "answer_end", "id": answer_id},
@@ -240,6 +252,28 @@ async def push_to_talk(session_id: str, audio: UploadFile = File(...)):
 @app.get("/meeting/list")
 async def list_meetings():
     return {"sessions": db.list_sessions()}
+
+
+class RenameRequest(BaseModel):
+    title: str
+
+
+@app.patch("/meeting/{session_id}/title")
+async def rename_meeting(session_id: str, req: RenameRequest):
+    title = req.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Title cannot be empty")
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    db.update_session_title(session_id, title)
+    return {"ok": True, "title": title}
+
+
+@app.get("/meeting/{session_id}/answers")
+async def get_answers(session_id: str):
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session_id": session_id, "answers": db.get_answers(session_id)}
 
 
 # ── Export ────────────────────────────────────────────────────────────────────

@@ -250,3 +250,68 @@ def test_summary_regenerate_ignores_cache(client):
 def test_summary_unknown_session_returns_404(client):
     r = client.post("/meeting/00000000-0000-0000-0000-000000000000/summary")
     assert r.status_code == 404
+
+
+# ── Rename ────────────────────────────────────────────────────────────────────
+
+
+def test_rename_meeting(client):
+    sid = client.post("/meeting/start", json={"title": "Old Name"}).json()["session_id"]
+    r = client.patch(f"/meeting/{sid}/title", json={"title": "New Name"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "New Name"
+
+    import meeting_copilot.storage.db as db_module
+
+    assert db_module.get_session(sid)["title"] == "New Name"
+
+
+def test_rename_empty_title_returns_422(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    r = client.patch(f"/meeting/{sid}/title", json={"title": "   "})
+    assert r.status_code == 422
+
+
+def test_rename_unknown_session_returns_404(client):
+    r = client.patch("/meeting/00000000-0000-0000-0000-000000000000/title", json={"title": "X"})
+    assert r.status_code == 404
+
+
+# ── Answers ───────────────────────────────────────────────────────────────────
+
+
+def test_get_answers_empty(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    r = client.get(f"/meeting/{sid}/answers")
+    assert r.status_code == 200
+    assert r.json()["answers"] == []
+
+
+def test_get_answers_persisted(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_answer(sid, "What was decided?", "The team chose option A.")
+
+    r = client.get(f"/meeting/{sid}/answers")
+    assert r.status_code == 200
+    ans = r.json()["answers"]
+    assert len(ans) == 1
+    assert ans[0]["question"] == "What was decided?"
+    assert ans[0]["answer"] == "The team chose option A."
+
+
+def test_get_answers_unknown_session_returns_404(client):
+    r = client.get("/meeting/00000000-0000-0000-0000-000000000000/answers")
+    assert r.status_code == 404
+
+
+def test_delete_also_removes_answers(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_answer(sid, "Q?", "A.")
+    client.post(f"/meeting/{sid}/end")
+
+    client.delete(f"/meeting/{sid}")
+    assert db_module.get_answers(sid) == []

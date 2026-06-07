@@ -1,9 +1,10 @@
 """
-SQLite storage for meeting sessions and utterances.
+SQLite storage for meeting sessions, utterances, and Q&A answers.
 
 Schema:
-  sessions  — one row per meeting (id, title, started_at, ended_at)
+  sessions   — one row per meeting (id, title, started_at, ended_at, summary)
   utterances — one row per transcript chunk (id, session_id, text, start_time, end_time, speaker)
+  answers    — one row per PTT Q&A exchange (id, session_id, question, answer, created_at)
 """
 
 import sqlite3
@@ -43,12 +44,22 @@ def init_db():
                 created_at  TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS answers (
+                id          TEXT PRIMARY KEY,
+                session_id  TEXT NOT NULL REFERENCES sessions(id),
+                question    TEXT NOT NULL,
+                answer      TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_utterances_session
                 ON utterances(session_id, start_time);
+            CREATE INDEX IF NOT EXISTS idx_answers_session
+                ON answers(session_id, created_at);
         """)
-        # Migrate: add summary column to existing databases
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
-        if "summary" not in cols:
+        # Migrate existing databases
+        session_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+        if "summary" not in session_cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN summary TEXT")
 
 
@@ -106,6 +117,7 @@ def list_sessions(limit: int = 20) -> list[dict]:
 def delete_session(session_id: str):
     with get_conn() as conn:
         conn.execute("DELETE FROM utterances WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM answers WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
 
 
@@ -114,6 +126,14 @@ def save_summary(session_id: str, summary: str):
         conn.execute(
             "UPDATE sessions SET summary = ? WHERE id = ?",
             (summary, session_id),
+        )
+
+
+def update_session_title(session_id: str, title: str):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET title = ? WHERE id = ?",
+            (title.strip(), session_id),
         )
 
 
@@ -147,6 +167,29 @@ def get_utterances(session_id: str, limit: int = 500) -> list[dict]:
                ORDER BY start_time ASC
                LIMIT ?""",
             (session_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── Answers ───────────────────────────────────────────────────────────────────
+
+
+def save_answer(session_id: str, question: str, answer: str) -> str:
+    answer_id = str(uuid.uuid4())
+    now = datetime.now(UTC).isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO answers (id, session_id, question, answer, created_at) VALUES (?, ?, ?, ?, ?)",
+            (answer_id, session_id, question, answer, now),
+        )
+    return answer_id
+
+
+def get_answers(session_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM answers WHERE session_id = ? ORDER BY created_at ASC",
+            (session_id,),
         ).fetchall()
         return [dict(r) for r in rows]
 

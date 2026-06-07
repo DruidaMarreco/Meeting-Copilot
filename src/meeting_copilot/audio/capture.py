@@ -15,11 +15,21 @@ import threading
 from collections.abc import Callable
 
 import numpy as np
-import pyaudiowpatch as pyaudio
 
 SAMPLE_RATE = 16000  # Whisper expects 16 kHz mono float32
 CHUNK_FRAMES = 1024
-FORMAT = pyaudio.paInt16
+_PA_INT16 = 8  # pyaudio.paInt16 — hardcoded so import is not required at module level
+_PA_CONTINUE = 0  # pyaudio.paContinue
+
+
+def _import_pyaudio():
+    """Lazy-import pyaudiowpatch; raises a clear error if not installed."""
+    try:
+        import pyaudiowpatch as pyaudio  # noqa: PLC0415
+
+        return pyaudio
+    except ImportError as exc:
+        raise RuntimeError("pyaudiowpatch is not installed. " "Run: uv sync --extra full") from exc
 
 
 def _resample(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
@@ -36,6 +46,7 @@ def _resample(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
 
 def list_devices() -> list[dict]:
     """Return all audio devices with their indices and names."""
+    pyaudio = _import_pyaudio()
     p = pyaudio.PyAudio()
     devices = []
     for i in range(p.get_device_count()):
@@ -53,7 +64,7 @@ def list_devices() -> list[dict]:
     return devices
 
 
-def find_loopback_device(p: pyaudio.PyAudio) -> dict | None:
+def find_loopback_device(p) -> dict | None:
     """
     Find the default WASAPI loopback device.
     Falls back to the first loopback device found.
@@ -91,6 +102,7 @@ class AudioCapture:
         self._queue: queue.Queue = queue.Queue()
         self._running = False
         self._threads: list[threading.Thread] = []
+        pyaudio = _import_pyaudio()
         self._p = pyaudio.PyAudio()
 
     def _make_callback(self, n_channels: int, native_rate: int):
@@ -112,7 +124,7 @@ class AudioCapture:
                 if native_rate != SAMPLE_RATE:
                     pcm = _resample(pcm, native_rate, SAMPLE_RATE)
                 self._queue.put(pcm)
-            return (None, pyaudio.paContinue)
+            return (None, _PA_CONTINUE)
 
         return _cb
 
@@ -140,7 +152,7 @@ class AudioCapture:
                     f"({n_ch}ch @ {native_rate} Hz → resampled to {SAMPLE_RATE} Hz)"
                 )
                 stream = self._p.open(
-                    format=FORMAT,
+                    format=_PA_INT16,
                     channels=n_ch,
                     rate=native_rate,
                     input=True,
@@ -154,7 +166,7 @@ class AudioCapture:
             mic_dev = self._p.get_default_input_device_info()
             print(f"[capture] Mic: {mic_dev['name']} (mono @ {SAMPLE_RATE} Hz)")
             stream = self._p.open(
-                format=FORMAT,
+                format=_PA_INT16,
                 channels=1,
                 rate=SAMPLE_RATE,
                 input=True,

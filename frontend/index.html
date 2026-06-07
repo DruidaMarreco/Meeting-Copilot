@@ -218,6 +218,34 @@
     .empty .icon { font-size: 40px; }
     .empty .title { font-size: 15px; font-weight: 500; color: var(--text); }
 
+    /* ── Editable title ── */
+    .editable-title {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-weight: 600; font-size: 15px;
+    }
+    .editable-title input {
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--accent); border-radius: 5px;
+      padding: 3px 8px; font-size: 15px; font-weight: 600;
+      outline: none; max-width: 340px;
+    }
+    .edit-title-btn {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 12px; padding: 2px 4px;
+      border-radius: 3px; line-height: 1;
+      transition: color 0.15s;
+    }
+    .edit-title-btn:hover { color: var(--accent); }
+
+    /* ── Q&A history panel ── */
+    .qa-card {
+      background: var(--answer-bg); border: 1px solid var(--answer-border);
+      border-radius: 8px; padding: 12px; animation: fadeIn 0.2s ease;
+      margin-bottom: 8px;
+    }
+    .qa-card .q { font-size: 12px; color: var(--green); margin-bottom: 6px; font-style: italic; }
+    .qa-card .a { font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+
     /* ── Summary ── */
     .summary-card {
       background: var(--summary-bg); border: 1px solid var(--summary-border);
@@ -412,9 +440,19 @@
       back.addEventListener("click", loadPastSessions);
       transcript.appendChild(back);
 
+      // Editable title
       const h = document.createElement("div");
-      h.style.cssText = "font-weight:600; margin-bottom:10px; font-size:15px;";
-      h.textContent = title;
+      h.className = "editable-title";
+      h.style.marginBottom = "10px";
+      const titleSpan = document.createElement("span");
+      titleSpan.textContent = title;
+      const editBtn = document.createElement("button");
+      editBtn.className = "edit-title-btn";
+      editBtn.title = "Rename session";
+      editBtn.textContent = "✏️";
+      editBtn.addEventListener("click", () => startTitleEdit(id, titleSpan, editBtn));
+      h.appendChild(titleSpan);
+      h.appendChild(editBtn);
       transcript.appendChild(h);
 
       const exportBar = document.createElement("div");
@@ -460,12 +498,80 @@
         e.style.height = "120px";
         e.textContent = "No transcript recorded for this session";
         transcript.appendChild(e);
-        return;
+      } else {
+        data.utterances.forEach(u => addUtterance(u));
       }
-      data.utterances.forEach(u => addUtterance(u));
+
+      // Load past Q&A answers into the right panel
+      loadPastAnswers(id);
     } catch (e) {
       console.error(e);
     }
+  }
+
+  async function loadPastAnswers(id) {
+    try {
+      const res = await fetch(`${API}/meeting/${id}/answers`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.answers.length) return;
+
+      answers.innerHTML = "";
+      // Show oldest first at the bottom (newest prepended), so reverse
+      [...data.answers].reverse().forEach(a => {
+        const card = document.createElement("div");
+        card.className = "qa-card";
+        const q = document.createElement("div");
+        q.className = "q";
+        q.textContent = "Q: " + a.question;
+        const aEl = document.createElement("div");
+        aEl.className = "a";
+        aEl.textContent = a.answer;
+        card.appendChild(q);
+        card.appendChild(aEl);
+        answers.prepend(card);
+      });
+    } catch { /* ignore */ }
+  }
+
+  async function startTitleEdit(id, titleSpan, editBtn) {
+    const currentTitle = titleSpan.textContent;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = currentTitle;
+    input.style.maxWidth = "340px";
+    titleSpan.replaceWith(input);
+    editBtn.textContent = "✓";
+    editBtn.title = "Save";
+    input.focus();
+    input.select();
+
+    const save = async () => {
+      const newTitle = input.value.trim() || currentTitle;
+      try {
+        await fetch(`${API}/meeting/${id}/title`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: newTitle }),
+        });
+      } catch { /* best-effort */ }
+      titleSpan.textContent = newTitle;
+      input.replaceWith(titleSpan);
+      editBtn.textContent = "✏️";
+      editBtn.title = "Rename session";
+      editBtn.onclick = () => startTitleEdit(id, titleSpan, editBtn);
+    };
+
+    editBtn.onclick = save;
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") save();
+      if (e.key === "Escape") {
+        input.replaceWith(titleSpan);
+        editBtn.textContent = "✏️";
+        editBtn.title = "Rename session";
+        editBtn.onclick = () => startTitleEdit(id, titleSpan, editBtn);
+      }
+    });
   }
 
   async function fetchCachedSummary(id, textEl, btn) {

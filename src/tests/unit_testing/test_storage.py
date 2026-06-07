@@ -111,3 +111,51 @@ def test_utterances_isolated_per_session():
     s2, _ = create_session()
     save_utterance(s1, "Session 1 text", 0.0, 1.0)
     assert get_utterances(s2) == []
+
+
+# ── Rename ────────────────────────────────────────────────────────────────────
+
+
+def test_update_session_title():
+    from meeting_copilot.storage.db import create_session, get_session, update_session_title
+
+    sid, _ = create_session("Original")
+    update_session_title(sid, "Renamed")
+    s = get_session(sid)
+    assert s is not None
+    assert s["title"] == "Renamed"
+
+
+# ── Answers ───────────────────────────────────────────────────────────────────
+
+
+def test_save_and_get_answers():
+    from meeting_copilot.storage.db import create_session, get_answers, save_answer
+
+    sid, _ = create_session()
+    aid = save_answer(sid, "What was decided?", "Option A was chosen.")
+    answers = get_answers(sid)
+    assert len(answers) == 1
+    assert answers[0]["id"] == aid
+    assert answers[0]["question"] == "What was decided?"
+    assert answers[0]["answer"] == "Option A was chosen."
+
+
+def test_answers_ordered_by_created_at():
+    from meeting_copilot.storage.db import create_session, get_answers, save_answer
+
+    sid, _ = create_session()
+    save_answer(sid, "Q1", "A1")
+    save_answer(sid, "Q2", "A2")
+    answers = get_answers(sid)
+    assert answers[0]["question"] == "Q1"
+    assert answers[1]["question"] == "Q2"
+
+
+def test_delete_session_removes_answers():
+    from meeting_copilot.storage.db import create_session, delete_session, get_answers, save_answer
+
+    sid, _ = create_session()
+    save_answer(sid, "Q?", "A.")
+    delete_session(sid)
+    assert get_answers(sid) == []
