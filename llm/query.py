@@ -16,9 +16,10 @@ from __future__ import annotations
 import ollama
 from typing import Optional, Generator
 from storage import db, vector_store
+from config import OLLAMA_MODEL
 
 
-DEFAULT_MODEL = "llama3"
+DEFAULT_MODEL = OLLAMA_MODEL
 CONTEXT_WINDOW_SECONDS = 300   # last 5 minutes always included
 TOP_K_SEMANTIC = 5
 
