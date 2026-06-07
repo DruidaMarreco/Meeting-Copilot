@@ -2,12 +2,15 @@
 WebSocket endpoint for live transcript streaming.
 
 Clients connect to /ws/{session_id} and receive JSON messages:
-  {"type": "utterance", "text": "...", "start": 1.2, "end": 3.4}
-  {"type": "answer",    "text": "...", "question": "..."}
-  {"type": "error",     "message": "..."}
+  {"type": "utterance",    "text": "...", "start": 1.2, "end": 3.4}
+  {"type": "answer_start", "question": "...", "id": "..."}
+  {"type": "answer_token", "id": "...", "token": "..."}
+  {"type": "answer_end",   "id": "..."}
+  {"type": "error",        "message": "..."}
 
-The server holds a dict of active connections per session.
-TranscriptionEngine callbacks push utterances to all connected clients.
+broadcast_sync() is called from worker threads (transcription engine,
+streaming answer task) via run_coroutine_threadsafe against the main
+event loop captured at server startup.
 """
 
 from __future__ import annotations
@@ -20,6 +23,15 @@ from fastapi import WebSocket
 
 # session_id -> set of WebSocket connections
 _connections: dict[str, set[WebSocket]] = defaultdict(set)
+
+# Main event loop — set by set_event_loop() during server lifespan startup.
+# Allows broadcast_sync() to schedule work from worker threads.
+_loop: asyncio.AbstractEventLoop | None = None
+
+
+def set_event_loop(loop: asyncio.AbstractEventLoop) -> None:
+    global _loop
+    _loop = loop
 
 
 async def connect(session_id: str, ws: WebSocket):
@@ -45,11 +57,12 @@ async def broadcast(session_id: str, message: dict):
 
 def broadcast_sync(session_id: str, message: dict):
     """
-    Thread-safe broadcast from a sync context (e.g., transcription callback).
-    Uses asyncio.run_coroutine_threadsafe against the running event loop.
+    Thread-safe broadcast from a sync context (transcription thread, streaming task).
+
+    Schedules work on the main event loop captured at startup. Safe to call from
+    any worker thread while the server is running; silently no-ops in tests and
+    after shutdown.
     """
-    try:
-        loop = asyncio.get_running_loop()
+    loop = _loop
+    if loop is not None and loop.is_running():
         asyncio.run_coroutine_threadsafe(broadcast(session_id, message), loop)
-    except RuntimeError:
-        pass  # No running event loop — in a test or post-shutdown
