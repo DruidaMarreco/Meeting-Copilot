@@ -19,7 +19,12 @@ from dataclasses import dataclass
 import numpy as np
 from faster_whisper import WhisperModel
 
-from config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_LANGUAGE, WHISPER_MODEL_SIZE
+from meeting_copilot.config import (
+    WHISPER_COMPUTE_TYPE,
+    WHISPER_DEVICE,
+    WHISPER_LANGUAGE,
+    WHISPER_MODEL_SIZE,
+)
 
 SAMPLE_RATE = 16000
 SILENCE_THRESHOLD = 0.01  # RMS below this = silence

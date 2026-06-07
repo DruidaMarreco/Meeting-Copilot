@@ -11,7 +11,7 @@ import numpy as np
 
 
 def test_resample_noop_when_rates_equal():
-    from audio.capture import _resample
+    from meeting_copilot.audio.capture import _resample
 
     audio = np.array([0.1, 0.2, 0.3], dtype=np.float32)
     out = _resample(audio, 16000, 16000)
@@ -19,7 +19,7 @@ def test_resample_noop_when_rates_equal():
 
 
 def test_resample_downsample_length():
-    from audio.capture import _resample
+    from meeting_copilot.audio.capture import _resample
 
     audio = np.ones(44100, dtype=np.float32)
     out = _resample(audio, 44100, 16000)
@@ -27,7 +27,7 @@ def test_resample_downsample_length():
 
 
 def test_resample_upsample_length():
-    from audio.capture import _resample
+    from meeting_copilot.audio.capture import _resample
 
     audio = np.ones(16000, dtype=np.float32)
     out = _resample(audio, 16000, 44100)
@@ -35,7 +35,7 @@ def test_resample_upsample_length():
 
 
 def test_resample_output_dtype():
-    from audio.capture import _resample
+    from meeting_copilot.audio.capture import _resample
 
     audio = np.ones(100, dtype=np.float32)
     out = _resample(audio, 48000, 16000)
@@ -54,7 +54,7 @@ def test_callback_mono_no_resample(tmp_path):
     """Mono 16 kHz stream: samples pass through unchanged."""
     from unittest.mock import MagicMock
 
-    from audio.capture import AudioCapture
+    from meeting_copilot.audio.capture import AudioCapture
 
     cap = AudioCapture.__new__(AudioCapture)
     cap._queue = __import__("queue").Queue()
@@ -77,7 +77,7 @@ def test_callback_mono_no_resample(tmp_path):
 
 def test_callback_stereo_mixed_to_mono():
     """Stereo stream: L/R channels are averaged to mono."""
-    from audio.capture import AudioCapture
+    from meeting_copilot.audio.capture import AudioCapture
 
     cap = AudioCapture.__new__(AudioCapture)
     cap._queue = __import__("queue").Queue()
@@ -97,7 +97,7 @@ def test_callback_stereo_mixed_to_mono():
 
 def test_callback_resamples_loopback_rate():
     """44100 Hz loopback stream is resampled to 16000 Hz."""
-    from audio.capture import AudioCapture
+    from meeting_copilot.audio.capture import AudioCapture
 
     cap = AudioCapture.__new__(AudioCapture)
     cap._queue = __import__("queue").Queue()

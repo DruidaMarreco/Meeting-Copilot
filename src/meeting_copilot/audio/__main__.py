@@ -4,7 +4,7 @@ import time
 
 import numpy as np
 
-from audio.capture import AudioCapture, list_devices
+from meeting_copilot.audio.capture import AudioCapture, list_devices
 
 print("=== Audio Device List ===")
 for d in list_devices():
