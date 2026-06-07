@@ -1,20 +1,9 @@
-from .db import (
-    create_session as create_session,
-)
-from .db import (
-    end_session as end_session,
-)
-from .db import (
-    get_recent_utterances as get_recent_utterances,
-)
-from .db import (
-    get_utterances as get_utterances,
-)
-from .db import (
-    init_db as init_db,
-)
-from .db import (
-    save_utterance as save_utterance,
-)
+from .db import create_session as create_session
+from .db import delete_session as delete_session
+from .db import end_session as end_session
+from .db import get_recent_utterances as get_recent_utterances
+from .db import get_utterances as get_utterances
+from .db import init_db as init_db
+from .db import save_utterance as save_utterance
 from .vector_store import add_utterance as add_utterance
 from .vector_store import search as search

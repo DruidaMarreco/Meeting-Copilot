@@ -137,3 +137,65 @@ def test_ptt_unknown_session_returns_404(client):
         files={"audio": ("q.wav", io.BytesIO(b"fake"), "audio/wav")},
     )
     assert r.status_code == 404
+
+
+# ── Export ────────────────────────────────────────────────────────────────────
+
+
+def test_export_txt(client):
+    import storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "Export Test"}).json()["session_id"]
+    db_module.save_utterance(sid, "Hello world", 0.0, 2.0)
+    client.post(f"/meeting/{sid}/end")
+
+    r = client.get(f"/meeting/{sid}/transcript/export?format=txt")
+    assert r.status_code == 200
+    assert "text/plain" in r.headers["content-type"]
+    assert "Hello world" in r.text
+    assert "Export Test" in r.text
+    assert r.headers["content-disposition"].endswith('.txt"')
+
+
+def test_export_md(client):
+    import storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "MD Test"}).json()["session_id"]
+    db_module.save_utterance(sid, "Markdown content", 5.0, 7.0)
+
+    r = client.get(f"/meeting/{sid}/transcript/export?format=md")
+    assert r.status_code == 200
+    assert "# MD Test" in r.text
+    assert "Markdown content" in r.text
+    assert "[00:05]" in r.text
+
+
+def test_export_unknown_session(client):
+    r = client.get("/meeting/00000000-0000-0000-0000-000000000000/transcript/export")
+    assert r.status_code == 404
+
+
+# ── Delete ────────────────────────────────────────────────────────────────────
+
+
+def test_delete_meeting(client):
+    import storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "To Delete"}).json()["session_id"]
+    db_module.save_utterance(sid, "Some text", 0.0, 1.0)
+    client.post(f"/meeting/{sid}/end")
+
+    r = client.delete(f"/meeting/{sid}")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+    # Session and utterances must be gone
+    assert db_module.get_session(sid) is None
+    assert db_module.get_utterances(sid) == []
+
+
+def test_delete_active_meeting_stops_it(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    r = client.delete(f"/meeting/{sid}")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True

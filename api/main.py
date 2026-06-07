@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -31,6 +32,7 @@ from config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_MODEL_SIZE
 from llm.query import answer as llm_answer
 from llm.query import check_ollama
 from storage import db, init_db, save_utterance, vector_store
+from storage import delete_session as db_delete_session
 from transcription.engine import TranscriptChunk, TranscriptionEngine
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -237,6 +239,77 @@ async def push_to_talk(session_id: str, audio: UploadFile = File(...)):
 @app.get("/meeting/list")
 async def list_meetings():
     return {"sessions": db.list_sessions()}
+
+
+# ── Export ────────────────────────────────────────────────────────────────────
+
+
+def _fmt_time(secs: float) -> str:
+    m, s = divmod(int(secs), 60)
+    return f"{m:02d}:{s:02d}"
+
+
+def _safe_filename(title: str) -> str:
+    return re.sub(r"[^\w\-]", "-", title).strip("-") or "transcript"
+
+
+def _export_txt(session: dict, utterances: list[dict]) -> str:
+    lines = [f"Meeting: {session['title']}", f"Date: {session['started_at'][:19]}", ""]
+    for u in utterances:
+        lines.append(f"[{_fmt_time(u['start_time'])}] {u['text']}")
+    return "\n".join(lines) + "\n"
+
+
+def _export_md(session: dict, utterances: list[dict]) -> str:
+    lines = [
+        f"# {session['title']}",
+        "",
+        f"**Date:** {session['started_at'][:19]}",
+        "",
+        "---",
+        "",
+    ]
+    for u in utterances:
+        lines.append(f"**[{_fmt_time(u['start_time'])}]** {u['text']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+@app.get("/meeting/{session_id}/transcript/export")
+async def export_transcript(
+    session_id: str, format: str = Query(default="txt", pattern="^(txt|md)$")
+):
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    utterances = db.get_utterances(session_id)
+    name = _safe_filename(session["title"])
+    if format == "md":
+        body = _export_md(session, utterances)
+        return Response(
+            content=body,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{name}.md"'},
+        )
+    body = _export_txt(session, utterances)
+    return Response(
+        content=body,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}.txt"'},
+    )
+
+
+# ── Delete ────────────────────────────────────────────────────────────────────
+
+
+@app.delete("/meeting/{session_id}")
+async def delete_meeting(session_id: str):
+    state = _active_sessions.pop(session_id, None)
+    if state:
+        _stop_session(session_id, state)
+    db_delete_session(session_id)
+    vector_store.delete_session(session_id)
+    return {"ok": True}
 
 
 @app.websocket("/ws/{session_id}")
