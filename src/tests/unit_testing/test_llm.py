@@ -114,3 +114,62 @@ def test_answer_stream(tmp_path, monkeypatch):
         result = "".join(answer(sid, "What is the answer?", stream=True))
 
     assert result == "The answer is 42."
+
+
+# ── summarize ─────────────────────────────────────────────────────────────────
+
+
+def test_summarize_non_stream(tmp_path, monkeypatch):
+    import storage.db as db_module
+
+    monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
+    db_module.init_db()
+    sid, _ = db_module.create_session()
+    db_module.save_utterance(sid, "We agreed on a Q3 launch.", 0.0, 3.0)
+
+    response_obj = SimpleNamespace(message=SimpleNamespace(content="Key decision: Q3 launch."))
+    with patch("llm.query.ollama.chat", return_value=response_obj):
+        from llm.query import summarize
+
+        result = summarize(sid)
+
+    assert "Q3" in result
+
+
+def test_summarize_stream(tmp_path, monkeypatch):
+    import storage.db as db_module
+
+    monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
+    db_module.init_db()
+    sid, _ = db_module.create_session()
+
+    chunks = [
+        SimpleNamespace(message=SimpleNamespace(content="Summary: ")),
+        SimpleNamespace(message=SimpleNamespace(content="short meeting.")),
+    ]
+    with patch("llm.query.ollama.chat", return_value=iter(chunks)):
+        from llm.query import summarize
+
+        result = "".join(summarize(sid, stream=True))
+
+    assert result == "Summary: short meeting."
+
+
+def test_summarize_empty_session(tmp_path, monkeypatch):
+    """Summarizing a session with no utterances should still call ollama (with empty transcript note)."""
+    import storage.db as db_module
+
+    monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
+    db_module.init_db()
+    sid, _ = db_module.create_session()
+
+    response_obj = SimpleNamespace(
+        message=SimpleNamespace(content="Not enough content to summarize.")
+    )
+    with patch("llm.query.ollama.chat", return_value=response_obj) as mock_chat:
+        from llm.query import summarize
+
+        result = summarize(sid)
+
+    assert mock_chat.called
+    assert "Not enough" in result

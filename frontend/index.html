@@ -20,6 +20,8 @@
       --orange: #fb923c;
       --answer-bg: #1e2a1e;
       --answer-border: #2d4a2d;
+      --summary-bg: #1a1d2e;
+      --summary-border: #2d3a5a;
     }
 
     body {
@@ -216,6 +218,27 @@
     .empty .icon { font-size: 40px; }
     .empty .title { font-size: 15px; font-weight: 500; color: var(--text); }
 
+    /* ── Summary ── */
+    .summary-card {
+      background: var(--summary-bg); border: 1px solid var(--summary-border);
+      border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;
+      animation: fadeIn 0.2s ease;
+    }
+    .summary-card .summary-header {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--accent); margin-bottom: 8px;
+    }
+    .summary-card .summary-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+    .summary-card .summary-actions { margin-top: 10px; display: flex; gap: 8px; }
+    .btn-summarize {
+      font-size: 12px; padding: 5px 12px; background: var(--summary-bg);
+      border: 1px solid var(--summary-border); color: var(--accent);
+      border-radius: 5px; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-summarize:hover { background: #20264a; border-color: var(--accent); }
+    .btn-summarize:disabled { opacity: 0.45; cursor: not-allowed; }
+
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     @keyframes pulse  { 0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.4); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
     @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
@@ -257,6 +280,7 @@
     <div class="ptt-area">
       <button id="btn-ptt" disabled title="Hold to ask a question">🎤</button>
       <div class="ptt-hint">Hold to ask · Release to send · Space</div>
+      <button id="btn-summarize" class="btn-summarize" disabled style="margin-top:4px;">📋 Summarize meeting</button>
     </div>
   </div>
 </div>
@@ -268,10 +292,12 @@
   let mediaRecorder = null;
   let audioChunks = [];
   const pendingAnswers = {};
+  const pendingSummaries = {};
 
-  const btnStart    = document.getElementById("btn-start");
-  const btnEnd      = document.getElementById("btn-end");
-  const btnPtt      = document.getElementById("btn-ptt");
+  const btnStart      = document.getElementById("btn-start");
+  const btnEnd        = document.getElementById("btn-end");
+  const btnPtt        = document.getElementById("btn-ptt");
+  const btnSummarize  = document.getElementById("btn-summarize");
   const recDot      = document.getElementById("rec-dot");
   const recLabel    = document.getElementById("rec-label");
   const ollamaDot   = document.getElementById("ollama-dot");
@@ -399,10 +425,39 @@
         <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=md" download>Markdown</a>`;
       transcript.appendChild(exportBar);
 
+      // Summary card
+      const summaryCard = document.createElement("div");
+      summaryCard.className = "summary-card";
+      const summaryHeaderEl = document.createElement("div");
+      summaryHeaderEl.className = "summary-header";
+      summaryHeaderEl.textContent = "📋 Meeting Summary";
+      const summaryTextEl = document.createElement("div");
+      summaryTextEl.className = "summary-text";
+      summaryTextEl.style.color = "var(--text-muted)";
+      summaryTextEl.textContent = "No summary yet.";
+      const summaryActionsEl = document.createElement("div");
+      summaryActionsEl.className = "summary-actions";
+      const btnGen = document.createElement("button");
+      btnGen.className = "btn-summarize";
+      btnGen.textContent = "✨ Generate Summary";
+      btnGen.addEventListener("click", () => requestSummary(id, summaryTextEl, btnGen, false));
+      summaryActionsEl.appendChild(btnGen);
+      summaryCard.appendChild(summaryHeaderEl);
+      summaryCard.appendChild(summaryTextEl);
+      summaryCard.appendChild(summaryActionsEl);
+      transcript.appendChild(summaryCard);
+
+      // Pre-fill cached summary if available
+      fetchCachedSummary(id, summaryTextEl, btnGen);
+
+      const divider = document.createElement("hr");
+      divider.style.cssText = "border:none; border-top:1px solid var(--border); margin:12px 0;";
+      transcript.appendChild(divider);
+
       if (!data.utterances.length) {
         const e = document.createElement("div");
         e.className = "empty";
-        e.style.height = "160px";
+        e.style.height = "120px";
         e.textContent = "No transcript recorded for this session";
         transcript.appendChild(e);
         return;
@@ -410,6 +465,82 @@
       data.utterances.forEach(u => addUtterance(u));
     } catch (e) {
       console.error(e);
+    }
+  }
+
+  async function fetchCachedSummary(id, textEl, btn) {
+    try {
+      const res = await fetch(`${API}/meeting/${id}/summary`, { method: "POST" });
+      const data = await res.json();
+      if (data.cached && data.text) {
+        textEl.style.color = "var(--text)";
+        textEl.textContent = data.text;
+        btn.textContent = "↺ Regenerate";
+        btn.addEventListener("click", () => requestSummary(id, textEl, btn, true), { once: true });
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function requestSummary(id, textEl, btn, forceRegen) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Generating…";
+    textEl.style.color = "var(--text-muted)";
+    textEl.textContent = "";
+
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    cursor.textContent = "▊";
+    textEl.appendChild(cursor);
+
+    try {
+      const endpoint = forceRegen
+        ? `${API}/meeting/${id}/summary/regenerate`
+        : `${API}/meeting/${id}/summary`;
+      const res = await fetch(endpoint, { method: "POST" });
+      const data = await res.json();
+
+      if (data.cached && data.text) {
+        // Already had a cached version returned
+        cursor.remove();
+        textEl.style.color = "var(--text)";
+        textEl.textContent = data.text;
+        btn.disabled = false;
+        btn.textContent = "↺ Regenerate";
+        return;
+      }
+
+      // Stream via a temporary WebSocket
+      const summaryId = data.summary_id;
+      pendingSummaries[summaryId] = { textEl, cursor };
+
+      const tempWs = new WebSocket(`ws://localhost:8000/ws/${id}`);
+      tempWs.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "summary_start" && msg.id === summaryId) {
+          textEl.style.color = "var(--text)";
+        }
+        if (msg.type === "summary_token" && msg.id === summaryId) {
+          textEl.insertBefore(document.createTextNode(msg.token), cursor);
+        }
+        if (msg.type === "summary_end" && msg.id === summaryId) {
+          cursor.remove();
+          delete pendingSummaries[summaryId];
+          tempWs.close();
+          btn.disabled = false;
+          btn.textContent = "↺ Regenerate";
+          btn.onclick = () => requestSummary(id, textEl, btn, true);
+        }
+      };
+      tempWs.onerror = () => {
+        cursor.remove();
+        textEl.textContent = "Error generating summary. Is Ollama running?";
+        btn.disabled = false;
+        btn.textContent = "↺ Retry";
+      };
+    } catch {
+      textEl.textContent = "Error generating summary.";
+      btn.disabled = false;
+      btn.textContent = "↺ Retry";
     }
   }
 
@@ -442,6 +573,7 @@
 
       btnEnd.disabled = false;
       btnPtt.disabled = false;
+      btnSummarize.disabled = false;
       titleInput.disabled = true;
       setRecStatus(true, "Recording");
       sessionInfo.textContent = `Session: ${sessionId.slice(0, 8)}`;
@@ -451,10 +583,13 @@
       ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
-        if (msg.type === "utterance")    addUtterance(msg);
-        if (msg.type === "answer_start") startAnswer(msg);
-        if (msg.type === "answer_token") appendToken(msg);
-        if (msg.type === "answer_end")   finalizeAnswer(msg);
+        if (msg.type === "utterance")      addUtterance(msg);
+        if (msg.type === "answer_start")   startAnswer(msg);
+        if (msg.type === "answer_token")   appendToken(msg);
+        if (msg.type === "answer_end")     finalizeAnswer(msg);
+        if (msg.type === "summary_start")  startActiveSummary(msg);
+        if (msg.type === "summary_token")  appendSummaryToken(msg);
+        if (msg.type === "summary_end")    finalizeActiveSummary(msg);
       };
       ws.onerror = () => setRecStatus(true, "Recording (WS error)");
     } catch {
@@ -469,6 +604,7 @@
     if (!sessionId) return;
     btnEnd.disabled = true;
     btnPtt.disabled = true;
+    btnSummarize.disabled = true;
     titleInput.disabled = false;
     await fetch(`${API}/meeting/${sessionId}/end`, { method: "POST" });
     if (ws) ws.close();
@@ -477,6 +613,21 @@
     btnStart.disabled = false;
     sessionId = null;
     setTimeout(loadPastSessions, 400); // small delay so DB write settles
+  });
+
+  // ── Summarize (active meeting) ─────────────────────────────────────────────
+  btnSummarize.addEventListener("click", async () => {
+    if (!sessionId) return;
+    btnSummarize.disabled = true;
+    btnSummarize.textContent = "⏳ Generating…";
+    try {
+      await fetch(`${API}/meeting/${sessionId}/summary`, { method: "POST" });
+      // Tokens arrive via WebSocket (summary_start / summary_token / summary_end)
+    } catch {
+      showToast("Could not reach the server");
+      btnSummarize.disabled = false;
+      btnSummarize.textContent = "📋 Summarize meeting";
+    }
   });
 
   // ── PTT ────────────────────────────────────────────────────────────────────
@@ -596,6 +747,52 @@
     const cursor = el.querySelector(".cursor");
     if (cursor) cursor.remove();
     delete pendingAnswers[msg.id];
+  }
+
+  function startActiveSummary(msg) {
+    const empty = answers.querySelector(".empty");
+    if (empty) empty.remove();
+
+    const card = document.createElement("div");
+    card.className = "summary-card";
+    card.dataset.summaryId = msg.id;
+    card.style.borderColor = "var(--accent)";
+
+    const header = document.createElement("div");
+    header.className = "summary-header";
+    header.textContent = "📋 Meeting Summary";
+
+    const textEl = document.createElement("div");
+    textEl.className = "summary-text";
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    cursor.textContent = "▊";
+    textEl.appendChild(cursor);
+
+    card.appendChild(header);
+    card.appendChild(textEl);
+    answers.prepend(card);
+    pendingSummaries[msg.id] = textEl;
+  }
+
+  function appendSummaryToken(msg) {
+    const el = pendingSummaries[msg.id];
+    if (!el) return;
+    const cursor = el.querySelector(".cursor");
+    if (cursor) el.insertBefore(document.createTextNode(msg.token), cursor);
+    else el.appendChild(document.createTextNode(msg.token));
+  }
+
+  function finalizeActiveSummary(msg) {
+    const el = pendingSummaries[msg.id];
+    if (!el) return;
+    const cursor = el.querySelector(".cursor");
+    if (cursor) cursor.remove();
+    delete pendingSummaries[msg.id];
+    const card = el.closest(".summary-card");
+    if (card) card.style.borderColor = "";
+    btnSummarize.disabled = false;
+    btnSummarize.textContent = "📋 Summarize meeting";
   }
 
   function showToast(msg) {
