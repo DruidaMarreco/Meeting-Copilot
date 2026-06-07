@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Lint ────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (black · ruff · ty)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: black — formatting check
+        run: uv run --with black black --check --diff .
+
+      - name: ruff — lint check
+        run: uv run --with "ruff>=0.6.0" ruff check .
+
+      - name: ty — type check
+        run: uv run --with ty ty check .
+
+  # ── Unit Tests ───────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Run pytest
+        run: >-
+          uv run
+          --with pytest
+          --with "httpx>=0.27.0"
+          --with "fastapi>=0.111.0"
+          --with "pydantic>=2.7.0"
+          --with python-multipart
+          --with aiofiles
+          pytest src/tests/unit_testing/
