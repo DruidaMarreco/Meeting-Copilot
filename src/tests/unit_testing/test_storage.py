@@ -22,15 +22,16 @@ def isolated_db(tmp_path, monkeypatch):
 def test_create_session_returns_id():
     from storage.db import create_session
 
-    sid = create_session("Stand-up")
+    sid, _title = create_session("Stand-up")
     assert isinstance(sid, str) and len(sid) == 36  # UUID
 
 
 def test_get_session_fields():
     from storage.db import create_session, get_session
 
-    sid = create_session("Weekly review")
+    sid, _ = create_session("Weekly review")
     s = get_session(sid)
+    assert s is not None
     assert s["title"] == "Weekly review"
     assert s["ended_at"] is None
     assert s["started_at"] is not None
@@ -39,9 +40,10 @@ def test_get_session_fields():
 def test_end_session_sets_ended_at():
     from storage.db import create_session, end_session, get_session
 
-    sid = create_session()
+    sid, _ = create_session()
     end_session(sid)
     s = get_session(sid)
+    assert s is not None
     assert s["ended_at"] is not None
 
 
@@ -69,7 +71,7 @@ def test_get_nonexistent_session_returns_none():
 def test_save_and_get_utterances():
     from storage.db import create_session, get_utterances, save_utterance
 
-    sid = create_session()
+    sid, _ = create_session()
     save_utterance(sid, "Hello world", 0.0, 1.5)
     save_utterance(sid, "Second line", 2.0, 3.0)
     utts = get_utterances(sid)
@@ -81,7 +83,7 @@ def test_save_and_get_utterances():
 def test_utterances_ordered_by_start_time():
     from storage.db import create_session, get_utterances, save_utterance
 
-    sid = create_session()
+    sid, _ = create_session()
     save_utterance(sid, "Late", 10.0, 11.0)
     save_utterance(sid, "Early", 0.0, 1.0)
     utts = get_utterances(sid)
@@ -92,7 +94,7 @@ def test_utterances_ordered_by_start_time():
 def test_get_recent_utterances_window():
     from storage.db import create_session, get_recent_utterances, save_utterance
 
-    sid = create_session()
+    sid, _ = create_session()
     save_utterance(sid, "Old", 0.0, 1.0)
     save_utterance(sid, "Recent", 400.0, 401.0)
     # last_n_seconds=300 — "Old" at t=0 should be excluded when max_t=401
@@ -105,7 +107,7 @@ def test_get_recent_utterances_window():
 def test_utterances_isolated_per_session():
     from storage.db import create_session, get_utterances, save_utterance
 
-    s1 = create_session()
-    s2 = create_session()
+    s1, _ = create_session()
+    s2, _ = create_session()
     save_utterance(s1, "Session 1 text", 0.0, 1.0)
     assert get_utterances(s2) == []

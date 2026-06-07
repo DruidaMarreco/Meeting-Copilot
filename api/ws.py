@@ -11,11 +11,12 @@ TranscriptionEngine callbacks push utterances to all connected clients.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 from collections import defaultdict
-from fastapi import WebSocket, WebSocketDisconnect
 
+from fastapi import WebSocket
 
 # session_id -> set of WebSocket connections
 _connections: dict[str, set[WebSocket]] = defaultdict(set)

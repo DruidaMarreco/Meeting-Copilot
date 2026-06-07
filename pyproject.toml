@@ -83,6 +83,10 @@ ignore = [
 
 # ── ty ────────────────────────────────────────────────────────────────────────
 
-[tool.ty.src]
+[tool.ty.environment]
 root = ["."]
-exclude = ["data", "frontend", ".venv", "venv", "src/tests"]
+
+[tool.ty.rules]
+# Optional heavy deps (chromadb, faster-whisper, ollama, pyaudiowpatch) are not
+# installed in the dev environment — downgrade to warn so CI doesn't fail on them.
+unresolved-import = "warn"

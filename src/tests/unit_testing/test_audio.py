@@ -4,9 +4,8 @@ All pyaudiowpatch / hardware calls are mocked via conftest.py stubs.
 """
 
 import struct
-import numpy as np
-import pytest
 
+import numpy as np
 
 # ── _resample ─────────────────────────────────────────────────────────────────
 
@@ -54,12 +53,12 @@ def _make_pcm_bytes(samples: list[int], n_channels: int = 1) -> bytes:
 def test_callback_mono_no_resample(tmp_path):
     """Mono 16 kHz stream: samples pass through unchanged."""
     from unittest.mock import MagicMock
+
     from audio.capture import AudioCapture
 
     cap = AudioCapture.__new__(AudioCapture)
     cap._queue = __import__("queue").Queue()
 
-    import pyaudiowpatch as pyaudio  # mocked by conftest
     cap._p = MagicMock()
 
     received = []
@@ -78,7 +77,6 @@ def test_callback_mono_no_resample(tmp_path):
 
 def test_callback_stereo_mixed_to_mono():
     """Stereo stream: L/R channels are averaged to mono."""
-    from unittest.mock import MagicMock
     from audio.capture import AudioCapture
 
     cap = AudioCapture.__new__(AudioCapture)
@@ -99,7 +97,6 @@ def test_callback_stereo_mixed_to_mono():
 
 def test_callback_resamples_loopback_rate():
     """44100 Hz loopback stream is resampled to 16000 Hz."""
-    from unittest.mock import MagicMock
     from audio.capture import AudioCapture
 
     cap = AudioCapture.__new__(AudioCapture)

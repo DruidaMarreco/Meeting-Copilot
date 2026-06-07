@@ -12,12 +12,12 @@ Usage:
 
 import queue
 import threading
+from collections.abc import Callable
+
 import numpy as np
-from typing import Callable, Optional
 import pyaudiowpatch as pyaudio
 
-
-SAMPLE_RATE = 16000   # Whisper expects 16 kHz mono float32
+SAMPLE_RATE = 16000  # Whisper expects 16 kHz mono float32
 CHUNK_FRAMES = 1024
 FORMAT = pyaudio.paInt16
 
@@ -40,18 +40,20 @@ def list_devices() -> list[dict]:
     devices = []
     for i in range(p.get_device_count()):
         info = p.get_device_info_by_index(i)
-        devices.append({
-            "index": i,
-            "name": info["name"],
-            "max_input_channels": info["maxInputChannels"],
-            "max_output_channels": info["maxOutputChannels"],
-            "is_loopback": info.get("isLoopbackDevice", False),
-        })
+        devices.append(
+            {
+                "index": i,
+                "name": info["name"],
+                "max_input_channels": info["maxInputChannels"],
+                "max_output_channels": info["maxOutputChannels"],
+                "is_loopback": info.get("isLoopbackDevice", False),
+            }
+        )
     p.terminate()
     return devices
 
 
-def find_loopback_device(p: pyaudio.PyAudio) -> Optional[dict]:
+def find_loopback_device(p: pyaudio.PyAudio) -> dict | None:
     """
     Find the default WASAPI loopback device.
     Falls back to the first loopback device found.
@@ -100,6 +102,7 @@ class AudioCapture:
         np.frombuffer always yields a 1-D array — we need to know
         the channel count at callback creation time to reshape correctly.
         """
+
         def _cb(in_data, frame_count, time_info, status):
             if in_data:
                 pcm = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
@@ -110,6 +113,7 @@ class AudioCapture:
                     pcm = _resample(pcm, native_rate, SAMPLE_RATE)
                 self._queue.put(pcm)
             return (None, pyaudio.paContinue)
+
         return _cb
 
     def _process_queue(self):
@@ -131,8 +135,10 @@ class AudioCapture:
             else:
                 n_ch = min(int(loopback_dev["maxInputChannels"]), 2)
                 native_rate = int(loopback_dev["defaultSampleRate"])
-                print(f"[capture] Loopback: {loopback_dev['name']} "
-                      f"({n_ch}ch @ {native_rate} Hz → resampled to {SAMPLE_RATE} Hz)")
+                print(
+                    f"[capture] Loopback: {loopback_dev['name']} "
+                    f"({n_ch}ch @ {native_rate} Hz → resampled to {SAMPLE_RATE} Hz)"
+                )
                 stream = self._p.open(
                     format=FORMAT,
                     channels=n_ch,
@@ -184,7 +190,9 @@ if __name__ == "__main__":
     print("=== Audio Device List ===")
     for d in list_devices():
         flag = " [LOOPBACK]" if d["is_loopback"] else ""
-        print(f"  [{d['index']}] {d['name']}{flag}  in={d['max_input_channels']} out={d['max_output_channels']}")
+        print(
+            f"  [{d['index']}] {d['name']}{flag}  in={d['max_input_channels']} out={d['max_output_channels']}"
+        )
 
     print("\n=== Capturing for 10 seconds (speak + play audio) ===")
     chunks_received = []

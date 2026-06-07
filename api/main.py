@@ -12,28 +12,24 @@ Endpoints:
 """
 
 from __future__ import annotations
-import asyncio
-import io
-import tempfile
+
 import os
+import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional
 
-from config import WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE
-from storage import db, init_db, save_utterance
-from storage import vector_store
-from transcription.engine import TranscriptionEngine, TranscriptChunk
-from audio.capture import AudioCapture
-from llm.query import answer as llm_answer, check_ollama
 from api import ws as websocket_manager
-
+from audio.capture import AudioCapture
+from config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_MODEL_SIZE
+from llm.query import answer as llm_answer
+from llm.query import check_ollama
+from storage import db, init_db, save_utterance, vector_store
+from transcription.engine import TranscriptChunk, TranscriptionEngine
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -45,7 +41,10 @@ def _get_ptt_model():
     global _ptt_model
     if _ptt_model is None:
         from faster_whisper import WhisperModel
-        _ptt_model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
+
+        _ptt_model = WhisperModel(
+            WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE
+        )
     return _ptt_model
 
 
@@ -68,8 +67,9 @@ if FRONTEND_DIR.exists():
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
+
 class StartRequest(BaseModel):
-    title: Optional[str] = None
+    title: str | None = None
 
 
 class StartResponse(BaseModel):
@@ -78,6 +78,7 @@ class StartResponse(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_transcript_callback(session_id: str):
     def on_transcript(chunk: TranscriptChunk):
@@ -88,18 +89,27 @@ def _make_transcript_callback(session_id: str):
             start_time=chunk.start_time,
             end_time=chunk.end_time,
         )
-        vector_store.add_utterance(session_id, utt_id, chunk.text, {
-            "start": chunk.start_time,
-            "end": chunk.end_time,
-        })
+        vector_store.add_utterance(
+            session_id,
+            utt_id,
+            chunk.text,
+            {
+                "start": chunk.start_time,
+                "end": chunk.end_time,
+            },
+        )
         # Broadcast to WebSocket clients
-        websocket_manager.broadcast_sync(session_id, {
-            "type": "utterance",
-            "id": utt_id,
-            "text": chunk.text,
-            "start": chunk.start_time,
-            "end": chunk.end_time,
-        })
+        websocket_manager.broadcast_sync(
+            session_id,
+            {
+                "type": "utterance",
+                "id": utt_id,
+                "text": chunk.text,
+                "start": chunk.start_time,
+                "end": chunk.end_time,
+            },
+        )
+
     return on_transcript
 
 
@@ -117,6 +127,7 @@ def _stop_session(session_id: str, state: dict):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+
 @app.get("/")
 async def serve_ui():
     index = FRONTEND_DIR / "index.html"
@@ -132,12 +143,9 @@ async def health():
 
 @app.post("/meeting/start", response_model=StartResponse)
 async def start_meeting(req: StartRequest = StartRequest()):
-    session_id = db.create_session(req.title)
-    session = db.get_session(session_id)
+    session_id, title = db.create_session(req.title)
 
-    engine = TranscriptionEngine(
-        on_transcript=_make_transcript_callback(session_id)
-    )
+    engine = TranscriptionEngine(on_transcript=_make_transcript_callback(session_id))
     capture = AudioCapture(callback=engine.feed)
 
     engine.start()
@@ -145,7 +153,7 @@ async def start_meeting(req: StartRequest = StartRequest()):
 
     _active_sessions[session_id] = {"capture": capture, "engine": engine}
 
-    return StartResponse(session_id=session_id, title=session["title"])
+    return StartResponse(session_id=session_id, title=title)
 
 
 @app.post("/meeting/{session_id}/end")
@@ -194,11 +202,14 @@ async def push_to_talk(session_id: str, audio: UploadFile = File(...)):
     response = llm_answer(session_id=session_id, question=question)
 
     # Broadcast to UI
-    websocket_manager.broadcast_sync(session_id, {
-        "type": "answer",
-        "question": question,
-        "text": response,
-    })
+    websocket_manager.broadcast_sync(
+        session_id,
+        {
+            "type": "answer",
+            "question": question,
+            "text": response,
+        },
+    )
 
     return {"question": question, "answer": response}
 
@@ -214,13 +225,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     # Send existing transcript on connect
     utterances = db.get_utterances(session_id)
     for u in utterances:
-        await websocket.send_json({
-            "type": "utterance",
-            "id": u["id"],
-            "text": u["text"],
-            "start": u["start_time"],
-            "end": u["end_time"],
-        })
+        await websocket.send_json(
+            {
+                "type": "utterance",
+                "id": u["id"],
+                "text": u["text"],
+                "start": u["start_time"],
+                "end": u["end_time"],
+            }
+        )
     try:
         while True:
             await websocket.receive_text()  # keep alive

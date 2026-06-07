@@ -13,14 +13,16 @@ Pipeline:
 """
 
 from __future__ import annotations
-import ollama
-from typing import Generator
-from storage import db, vector_store
-from config import OLLAMA_MODEL
 
+from collections.abc import Generator
+
+import ollama
+
+from config import OLLAMA_MODEL
+from storage import db, vector_store
 
 DEFAULT_MODEL = OLLAMA_MODEL
-CONTEXT_WINDOW_SECONDS = 300   # last 5 minutes always included
+CONTEXT_WINDOW_SECONDS = 300  # last 5 minutes always included
 TOP_K_SEMANTIC = 5
 
 
@@ -88,9 +90,11 @@ def answer(
     ]
 
     if stream:
+
         def _stream_gen():
             for chunk in ollama.chat(model=model, messages=messages, stream=True):
                 yield _extract_content(chunk)
+
         return _stream_gen()
     else:
         return _extract_content(ollama.chat(model=model, messages=messages))
@@ -104,14 +108,10 @@ def check_ollama(model: str = DEFAULT_MODEL) -> bool:
         # SDK <0.3:  dict with "models" key (list of dicts with "name" key)
         if hasattr(response, "models"):
             names = [
-                getattr(m, "model", None) or getattr(m, "name", "") or ""
-                for m in response.models
+                getattr(m, "model", None) or getattr(m, "name", "") or "" for m in response.models
             ]
         else:
-            names = [
-                m.get("model", m.get("name", ""))
-                for m in response.get("models", [])
-            ]
+            names = [m.get("model", m.get("name", "")) for m in response.get("models", [])]
         return any(model in n for n in names)
     except Exception:
         return False

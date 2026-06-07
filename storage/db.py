@@ -8,11 +8,9 @@ Schema:
 
 import sqlite3
 import uuid
-from datetime import datetime, timezone
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
-
 
 DB_PATH = Path(__file__).parent.parent / "data" / "meetings.db"
 
@@ -64,19 +62,21 @@ def get_conn():
 
 # ── Sessions ─────────────────────────────────────────────────────────────────
 
-def create_session(title: Optional[str] = None) -> str:
+
+def create_session(title: str | None = None) -> tuple[str, str]:
     session_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
+    resolved_title = title or f"Meeting {now[:10]}"
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO sessions (id, title, started_at) VALUES (?, ?, ?)",
-            (session_id, title or f"Meeting {now[:10]}", now),
+            (session_id, resolved_title, now),
         )
-    return session_id
+    return session_id, resolved_title
 
 
 def end_session(session_id: str):
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     with get_conn() as conn:
         conn.execute(
             "UPDATE sessions SET ended_at = ? WHERE id = ?",
@@ -84,11 +84,9 @@ def end_session(session_id: str):
         )
 
 
-def get_session(session_id: str) -> Optional[dict]:
+def get_session(session_id: str) -> dict | None:
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
         return dict(row) if row else None
 
 
@@ -102,15 +100,16 @@ def list_sessions(limit: int = 20) -> list[dict]:
 
 # ── Utterances ────────────────────────────────────────────────────────────────
 
+
 def save_utterance(
     session_id: str,
     text: str,
     start_time: float,
     end_time: float,
-    speaker: Optional[str] = None,
+    speaker: str | None = None,
 ) -> str:
     utterance_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO utterances
