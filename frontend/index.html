@@ -117,10 +117,31 @@
       border-radius: 8px; padding: 12px 14px;
       cursor: pointer; transition: border-color 0.15s, background 0.15s;
       animation: fadeIn 0.2s ease;
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
     }
     .session-item:hover { border-color: var(--accent); background: #1f2336; }
+    .session-item .s-body { flex: 1; min-width: 0; }
     .session-item .s-title { font-weight: 500; margin-bottom: 3px; }
     .session-item .s-meta { font-size: 12px; color: var(--text-muted); }
+    .session-item .s-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .icon-btn {
+      background: none; border: none; color: var(--text-muted); cursor: pointer;
+      padding: 2px 5px; border-radius: 4px; font-size: 14px; line-height: 1;
+      transition: color 0.15s, background 0.15s;
+    }
+    .icon-btn:hover { color: var(--text); background: var(--border); }
+    .icon-btn.danger:hover { color: var(--red); }
+    .export-bar {
+      display: flex; gap: 8px; margin-bottom: 12px; align-items: center;
+    }
+    .export-btn {
+      font-size: 12px; padding: 4px 10px; background: var(--surface);
+      border: 1px solid var(--border); color: var(--text-muted);
+      border-radius: 5px; cursor: pointer; text-decoration: none;
+      transition: border-color 0.15s, color 0.15s;
+      display: inline-block;
+    }
+    .export-btn:hover { border-color: var(--accent); color: var(--accent); }
     .session-item .s-badge {
       display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px;
       border-radius: 4px; margin-left: 8px; vertical-align: middle;
@@ -235,7 +256,7 @@
     </div>
     <div class="ptt-area">
       <button id="btn-ptt" disabled title="Hold to ask a question">🎤</button>
-      <div class="ptt-hint">Hold to ask · Release to send</div>
+      <div class="ptt-hint">Hold to ask · Release to send · Space</div>
     </div>
   </div>
 </div>
@@ -325,10 +346,27 @@
       const badge = s.ended_at
         ? `<span class="s-badge ended">ended</span>`
         : `<span class="s-badge ongoing">live</span>`;
-      item.innerHTML = `
-        <div class="s-title">${escHtml(s.title)}${badge}</div>
-        <div class="s-meta">${date}</div>`;
-      item.addEventListener("click", () => loadSession(s.id, s.title));
+
+      const body = document.createElement("div");
+      body.className = "s-body";
+      body.innerHTML = `<div class="s-title">${escHtml(s.title)}${badge}</div><div class="s-meta">${date}</div>`;
+      body.addEventListener("click", () => loadSession(s.id, s.title));
+
+      const actions = document.createElement("div");
+      actions.className = "s-actions";
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "icon-btn danger";
+      delBtn.title = "Delete session";
+      delBtn.textContent = "🗑";
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteSession(s.id, item);
+      });
+
+      actions.appendChild(delBtn);
+      item.appendChild(body);
+      item.appendChild(actions);
       transcript.appendChild(item);
     });
   }
@@ -341,6 +379,7 @@
       const data = await res.json();
 
       transcript.innerHTML = "";
+
       const back = document.createElement("span");
       back.className = "view-back";
       back.textContent = "← Past meetings";
@@ -348,14 +387,22 @@
       transcript.appendChild(back);
 
       const h = document.createElement("div");
-      h.style.cssText = "font-weight:600; margin-bottom:12px; font-size:15px;";
+      h.style.cssText = "font-weight:600; margin-bottom:10px; font-size:15px;";
       h.textContent = title;
       transcript.appendChild(h);
+
+      const exportBar = document.createElement("div");
+      exportBar.className = "export-bar";
+      exportBar.innerHTML = `
+        <span style="font-size:12px; color:var(--text-muted);">Export:</span>
+        <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=txt" download>TXT</a>
+        <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=md" download>Markdown</a>`;
+      transcript.appendChild(exportBar);
 
       if (!data.utterances.length) {
         const e = document.createElement("div");
         e.className = "empty";
-        e.style.height = "200px";
+        e.style.height = "160px";
         e.textContent = "No transcript recorded for this session";
         transcript.appendChild(e);
         return;
@@ -363,6 +410,18 @@
       data.utterances.forEach(u => addUtterance(u));
     } catch (e) {
       console.error(e);
+    }
+  }
+
+  async function deleteSession(id, itemEl) {
+    if (!confirm("Delete this session and its transcript? This cannot be undone.")) return;
+    try {
+      await fetch(`${API}/meeting/${id}`, { method: "DELETE" });
+      itemEl.remove();
+      // If history list is now empty, show empty state
+      if (!transcript.querySelector(".session-item")) showEmptyState();
+    } catch {
+      showToast("Could not delete session");
     }
   }
 
@@ -425,6 +484,23 @@
   btnPtt.addEventListener("mouseup",   stopRecording);
   btnPtt.addEventListener("touchstart", (e) => { e.preventDefault(); startRecording(); });
   btnPtt.addEventListener("touchend",   (e) => { e.preventDefault(); stopRecording(); });
+
+  // Space bar shortcut — hold to record, release to send
+  let spaceHeld = false;
+  document.addEventListener("keydown", (e) => {
+    if (e.code !== "Space" || spaceHeld) return;
+    if (document.activeElement === titleInput) return; // typing in input
+    if (!sessionId || btnPtt.disabled) return;
+    e.preventDefault();
+    spaceHeld = true;
+    startRecording();
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.code !== "Space" || !spaceHeld) return;
+    e.preventDefault();
+    spaceHeld = false;
+    stopRecording();
+  });
 
   async function startRecording() {
     if (!sessionId) return;

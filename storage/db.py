@@ -98,6 +98,12 @@ def list_sessions(limit: int = 20) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def delete_session(session_id: str):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM utterances WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+
+
 # ── Utterances ────────────────────────────────────────────────────────────────
 
 
