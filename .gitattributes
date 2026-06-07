@@ -1,0 +1,7 @@
+# Normalize line endings: store as LF, checkout as native
+* text=auto eol=lf
+
+# Force binary for non-text assets
+*.db    binary
+*.sqlite binary
+*.pyc   binary
