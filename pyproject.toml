@@ -1,0 +1,58 @@
+[project]
+name = "meeting-copilot"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+# ── Pytest ────────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests/unit_testing"]
+pythonpath = ["."]
+addopts = "-v --tb=short"
+
+# ── Black ─────────────────────────────────────────────────────────────────────
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | data
+  | __pycache__
+  | frontend
+)/
+'''
+
+# ── Ruff ──────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["data", "frontend", ".venv", "venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",   # line length — handled by black
+    "B008",   # function call in default argument — FastAPI pattern
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/tests/**" = ["S101"]  # assert is fine in tests
+
+# ── ty ────────────────────────────────────────────────────────────────────────
+
+[tool.ty]
+# Type-check all source modules; exclude generated/runtime paths
+include = [
+    "api",
+    "audio",
+    "transcription",
+    "storage",
+    "llm",
+    "config.py",
+]
+exclude = ["data", "frontend", ".venv", "venv", "src/tests"]
