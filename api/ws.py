@@ -45,11 +45,10 @@ async def broadcast(session_id: str, message: dict):
 def broadcast_sync(session_id: str, message: dict):
     """
     Thread-safe broadcast from a sync context (e.g., transcription callback).
-    Uses asyncio.run_coroutine_threadsafe.
+    Uses asyncio.run_coroutine_threadsafe against the running event loop.
     """
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.run_coroutine_threadsafe(broadcast(session_id, message), loop)
+        loop = asyncio.get_running_loop()
+        asyncio.run_coroutine_threadsafe(broadcast(session_id, message), loop)
     except RuntimeError:
-        pass  # No event loop — probably in a test
+        pass  # No running event loop — in a test or post-shutdown

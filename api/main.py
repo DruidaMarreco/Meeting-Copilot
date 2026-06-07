@@ -38,6 +38,15 @@ from api import ws as websocket_manager
 # ── State ─────────────────────────────────────────────────────────────────────
 
 _active_sessions: dict[str, dict] = {}  # session_id -> {capture, engine}
+_ptt_model = None  # lazily loaded, reused across requests
+
+
+def _get_ptt_model():
+    global _ptt_model
+    if _ptt_model is None:
+        from faster_whisper import WhisperModel
+        _ptt_model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
+    return _ptt_model
 
 
 @asynccontextmanager
@@ -173,10 +182,7 @@ async def push_to_talk(session_id: str, audio: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
-        # Transcribe the question
-        from faster_whisper import WhisperModel
-        model = WhisperModel("small", device="cpu", compute_type="int8")
-        segments, _ = model.transcribe(tmp_path, language="en")
+        segments, _ = _get_ptt_model().transcribe(tmp_path, language="en")
         question = " ".join(seg.text.strip() for seg in segments).strip()
     finally:
         os.unlink(tmp_path)
