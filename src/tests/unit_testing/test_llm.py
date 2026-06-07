@@ -3,9 +3,8 @@ Tests for llm.query — covers both the legacy dict-style and the modern
 typed-object ollama SDK response shapes.
 """
 
-from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
-
+from unittest.mock import patch
 
 # ── _extract_content ──────────────────────────────────────────────────────────
 
@@ -80,11 +79,13 @@ def test_answer_non_stream(tmp_path, monkeypatch):
 
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
-    sid = db_module.create_session()
+    sid, _ = db_module.create_session()
 
     response_obj = SimpleNamespace(message=SimpleNamespace(content="The budget is $50k."))
-    with patch("llm.query.vector_store.search", return_value=[]), \
-         patch("llm.query.ollama.chat", return_value=response_obj):
+    with (
+        patch("llm.query.vector_store.search", return_value=[]),
+        patch("llm.query.ollama.chat", return_value=response_obj),
+    ):
         from llm.query import answer
 
         result = answer(sid, "What is the budget?")
@@ -97,15 +98,17 @@ def test_answer_stream(tmp_path, monkeypatch):
 
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
-    sid = db_module.create_session()
+    sid, _ = db_module.create_session()
 
     chunks = [
         SimpleNamespace(message=SimpleNamespace(content="The ")),
         SimpleNamespace(message=SimpleNamespace(content="answer ")),
         SimpleNamespace(message=SimpleNamespace(content="is 42.")),
     ]
-    with patch("llm.query.vector_store.search", return_value=[]), \
-         patch("llm.query.ollama.chat", return_value=iter(chunks)):
+    with (
+        patch("llm.query.vector_store.search", return_value=[]),
+        patch("llm.query.ollama.chat", return_value=iter(chunks)),
+    ):
         from llm.query import answer
 
         result = "".join(answer(sid, "What is the answer?", stream=True))

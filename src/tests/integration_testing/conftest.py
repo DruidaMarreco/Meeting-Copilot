@@ -12,8 +12,8 @@ Fixture pattern:
 """
 
 from pathlib import Path
-import pytest
 
+import pytest
 
 EXAMPLES_DIR = Path(__file__).parent / "examples"
 

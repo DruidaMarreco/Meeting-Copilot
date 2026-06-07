@@ -5,8 +5,9 @@ Heavy dependencies (WhisperModel, AudioCapture, Ollama) are mocked so
 these tests run without GPU, audio hardware, or a running Ollama server.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -25,8 +26,9 @@ def client(tmp_path, monkeypatch):
     mock_capture.return_value.start.return_value = []
     mock_engine = MagicMock()
 
-    with patch("api.main.AudioCapture", mock_capture), patch(
-        "api.main.TranscriptionEngine", mock_engine
+    with (
+        patch("api.main.AudioCapture", mock_capture),
+        patch("api.main.TranscriptionEngine", mock_engine),
     ):
         yield TestClient(api.main.app)
 
