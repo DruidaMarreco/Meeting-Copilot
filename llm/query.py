@@ -14,7 +14,7 @@ Pipeline:
 
 from __future__ import annotations
 import ollama
-from typing import Optional, Generator
+from typing import Generator
 from storage import db, vector_store
 from config import OLLAMA_MODEL
 
@@ -38,15 +38,12 @@ Meeting transcript context:
 
 
 def _build_context(session_id: str, question: str) -> str:
-    # Semantic retrieval
     semantic_hits = vector_store.search(session_id, question, n_results=TOP_K_SEMANTIC)
     semantic_texts = {h["text"] for h in semantic_hits}
 
-    # Recent context (last 5 minutes)
     recent = db.get_recent_utterances(session_id, last_n_seconds=CONTEXT_WINDOW_SECONDS)
     recent_texts = [u["text"] for u in recent]
 
-    # Combine: recent window first, then any semantic hits not already included
     all_texts = list(recent_texts)
     for text in semantic_texts:
         if text not in set(recent_texts):
@@ -58,6 +55,20 @@ def _build_context(session_id: str, question: str) -> str:
     return "\n".join(f"- {t}" for t in all_texts)
 
 
+def _extract_content(chunk_or_response) -> str:
+    """
+    Extract the text content from an ollama response or stream chunk.
+
+    ollama SDK >=0.3 returns typed objects (ChatResponse / chunk with .message);
+    older versions returned plain dicts. Handle both shapes gracefully.
+    """
+    msg = getattr(chunk_or_response, "message", None)
+    if msg is not None:
+        return getattr(msg, "content", "") or ""
+    # Fallback: dict-style (SDK <0.3)
+    return chunk_or_response.get("message", {}).get("content", "")
+
+
 def answer(
     session_id: str,
     question: str,
@@ -67,18 +78,10 @@ def answer(
     """
     Answer a question grounded in the current meeting's transcript.
 
-    Args:
-        session_id: Active meeting session
-        question: The question (from PTT transcription)
-        model: Ollama model name
-        stream: If True, returns a generator of text chunks
-
-    Returns:
-        Full answer string, or generator if stream=True
+    Returns a full string or a generator of text chunks when stream=True.
     """
     context = _build_context(session_id, question)
     system = SYSTEM_PROMPT.format(context=context)
-
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": question},
@@ -86,20 +89,29 @@ def answer(
 
     if stream:
         def _stream_gen():
-            response = ollama.chat(model=model, messages=messages, stream=True)
-            for chunk in response:
-                yield chunk["message"]["content"]
+            for chunk in ollama.chat(model=model, messages=messages, stream=True):
+                yield _extract_content(chunk)
         return _stream_gen()
     else:
-        response = ollama.chat(model=model, messages=messages)
-        return response["message"]["content"]
+        return _extract_content(ollama.chat(model=model, messages=messages))
 
 
 def check_ollama(model: str = DEFAULT_MODEL) -> bool:
-    """Check if Ollama is running and the model is available."""
+    """Return True if Ollama is running and the requested model is available."""
     try:
-        models = ollama.list()
-        available = [m["name"] for m in models.get("models", [])]
-        return any(model in name for name in available)
+        response = ollama.list()
+        # SDK >=0.3: ListResponse with .models (list of Model objects, .model attr)
+        # SDK <0.3:  dict with "models" key (list of dicts with "name" key)
+        if hasattr(response, "models"):
+            names = [
+                getattr(m, "model", None) or getattr(m, "name", "") or ""
+                for m in response.models
+            ]
+        else:
+            names = [
+                m.get("model", m.get("name", ""))
+                for m in response.get("models", [])
+            ]
+        return any(model in n for n in names)
     except Exception:
         return False
