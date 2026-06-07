@@ -6,7 +6,7 @@ these tests run without GPU, audio hardware, or a running Ollama server.
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 
@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 def client(tmp_path, monkeypatch):
     """TestClient with DB and all hardware deps mocked out."""
     import storage.db as db_module
+
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
 
@@ -24,12 +25,14 @@ def client(tmp_path, monkeypatch):
     mock_capture.return_value.start.return_value = []
     mock_engine = MagicMock()
 
-    with patch("api.main.AudioCapture", mock_capture), \
-         patch("api.main.TranscriptionEngine", mock_engine):
+    with patch("api.main.AudioCapture", mock_capture), patch(
+        "api.main.TranscriptionEngine", mock_engine
+    ):
         yield TestClient(api.main.app)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
+
 
 def test_health_endpoint(client):
     with patch("api.main.check_ollama", return_value=False):
@@ -39,6 +42,7 @@ def test_health_endpoint(client):
 
 
 # ── Meeting lifecycle ─────────────────────────────────────────────────────────
+
 
 def test_start_meeting(client):
     r = client.post("/meeting/start", json={"title": "Test meeting"})
@@ -68,6 +72,7 @@ def test_end_nonexistent_meeting_is_idempotent(client):
 
 # ── Transcript ────────────────────────────────────────────────────────────────
 
+
 def test_get_transcript_empty(client):
     sid = client.post("/meeting/start", json={}).json()["session_id"]
     r = client.get(f"/meeting/{sid}/transcript")
@@ -81,6 +86,7 @@ def test_get_transcript_unknown_session(client):
 
 
 # ── Meeting list ──────────────────────────────────────────────────────────────
+
 
 def test_list_meetings(client):
     client.post("/meeting/start", json={"title": "Alpha"})

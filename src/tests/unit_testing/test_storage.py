@@ -4,13 +4,13 @@ Uses a temp database so tests never touch data/meetings.db.
 """
 
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
 def isolated_db(tmp_path, monkeypatch):
     """Redirect DB_PATH to a temp file for every test."""
     import storage.db as db_module
+
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
     yield
@@ -18,14 +18,17 @@ def isolated_db(tmp_path, monkeypatch):
 
 # ── Sessions ──────────────────────────────────────────────────────────────────
 
+
 def test_create_session_returns_id():
     from storage.db import create_session
+
     sid = create_session("Stand-up")
     assert isinstance(sid, str) and len(sid) == 36  # UUID
 
 
 def test_get_session_fields():
     from storage.db import create_session, get_session
+
     sid = create_session("Weekly review")
     s = get_session(sid)
     assert s["title"] == "Weekly review"
@@ -35,6 +38,7 @@ def test_get_session_fields():
 
 def test_end_session_sets_ended_at():
     from storage.db import create_session, end_session, get_session
+
     sid = create_session()
     end_session(sid)
     s = get_session(sid)
@@ -43,6 +47,7 @@ def test_end_session_sets_ended_at():
 
 def test_list_sessions_contains_all():
     from storage.db import create_session, list_sessions
+
     for i in range(3):
         create_session(f"Meeting {i}")
     sessions = list_sessions()
@@ -54,13 +59,16 @@ def test_list_sessions_contains_all():
 
 def test_get_nonexistent_session_returns_none():
     from storage.db import get_session
+
     assert get_session("00000000-0000-0000-0000-000000000000") is None
 
 
 # ── Utterances ────────────────────────────────────────────────────────────────
 
+
 def test_save_and_get_utterances():
-    from storage.db import create_session, save_utterance, get_utterances
+    from storage.db import create_session, get_utterances, save_utterance
+
     sid = create_session()
     save_utterance(sid, "Hello world", 0.0, 1.5)
     save_utterance(sid, "Second line", 2.0, 3.0)
@@ -71,7 +79,8 @@ def test_save_and_get_utterances():
 
 
 def test_utterances_ordered_by_start_time():
-    from storage.db import create_session, save_utterance, get_utterances
+    from storage.db import create_session, get_utterances, save_utterance
+
     sid = create_session()
     save_utterance(sid, "Late", 10.0, 11.0)
     save_utterance(sid, "Early", 0.0, 1.0)
@@ -81,7 +90,8 @@ def test_utterances_ordered_by_start_time():
 
 
 def test_get_recent_utterances_window():
-    from storage.db import create_session, save_utterance, get_recent_utterances
+    from storage.db import create_session, get_recent_utterances, save_utterance
+
     sid = create_session()
     save_utterance(sid, "Old", 0.0, 1.0)
     save_utterance(sid, "Recent", 400.0, 401.0)
@@ -93,7 +103,8 @@ def test_get_recent_utterances_window():
 
 
 def test_utterances_isolated_per_session():
-    from storage.db import create_session, save_utterance, get_utterances
+    from storage.db import create_session, get_utterances, save_utterance
+
     s1 = create_session()
     s2 = create_session()
     save_utterance(s1, "Session 1 text", 0.0, 1.0)
