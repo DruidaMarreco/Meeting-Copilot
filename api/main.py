@@ -31,7 +31,8 @@ from audio.capture import AudioCapture
 from config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_MODEL_SIZE
 from llm.query import answer as llm_answer
 from llm.query import check_ollama
-from storage import db, init_db, save_utterance, vector_store
+from llm.query import summarize as llm_summarize
+from storage import db, init_db, save_summary, save_utterance, vector_store
 from storage import delete_session as db_delete_session
 from transcription.engine import TranscriptChunk, TranscriptionEngine
 
@@ -297,6 +298,71 @@ async def export_transcript(
         media_type="text/plain; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{name}.txt"'},
     )
+
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+
+
+def _stream_summary_to_ws(session_id: str, answer_id: str) -> None:
+    """Generate meeting summary in a thread pool, stream tokens to WebSocket."""
+    websocket_manager.broadcast_sync(
+        session_id,
+        {"type": "summary_start", "id": answer_id},
+    )
+    tokens: list[str] = []
+    try:
+        for token in llm_summarize(session_id=session_id, stream=True):
+            if token:
+                tokens.append(token)
+                websocket_manager.broadcast_sync(
+                    session_id,
+                    {"type": "summary_token", "id": answer_id, "token": token},
+                )
+    finally:
+        full_text = "".join(tokens)
+        if full_text:
+            save_summary(session_id, full_text)
+        websocket_manager.broadcast_sync(
+            session_id,
+            {"type": "summary_end", "id": answer_id, "text": full_text},
+        )
+
+
+@app.post("/meeting/{session_id}/summary")
+async def generate_summary(session_id: str):
+    """
+    Trigger a summary of the full meeting transcript.
+    Streams tokens via WebSocket (summary_start / summary_token / summary_end).
+    Also persists the finished summary to the database.
+    Returns {summary_id} immediately.
+    """
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Return cached summary if available and not regenerating
+    if session.get("summary"):
+        return {
+            "summary_id": None,
+            "cached": True,
+            "text": session["summary"],
+        }
+
+    summary_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _stream_summary_to_ws, session_id, summary_id)
+    return {"summary_id": summary_id, "cached": False}
+
+
+@app.post("/meeting/{session_id}/summary/regenerate")
+async def regenerate_summary(session_id: str):
+    """Force-regenerate the summary, ignoring any cached version."""
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    summary_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _stream_summary_to_ws, session_id, summary_id)
+    return {"summary_id": summary_id, "cached": False}
 
 
 # ── Delete ────────────────────────────────────────────────────────────────────

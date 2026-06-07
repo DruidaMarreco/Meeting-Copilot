@@ -199,3 +199,54 @@ def test_delete_active_meeting_stops_it(client):
     r = client.delete(f"/meeting/{sid}")
     assert r.status_code == 200
     assert r.json()["ok"] is True
+
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+
+
+def test_summary_returns_summary_id(client):
+    """Posting to /summary for a valid session starts streaming and returns a summary_id."""
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+
+    with patch("api.main._stream_summary_to_ws"):  # don't call ollama
+        r = client.post(f"/meeting/{sid}/summary")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cached"] is False
+    assert "summary_id" in data
+
+
+def test_summary_returns_cached(client):
+    """If a summary was previously stored, /summary returns it without streaming."""
+    import storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_summary(sid, "This is the cached summary.")
+
+    r = client.post(f"/meeting/{sid}/summary")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cached"] is True
+    assert data["text"] == "This is the cached summary."
+
+
+def test_summary_regenerate_ignores_cache(client):
+    """/summary/regenerate always spawns a new stream even when cache exists."""
+    import storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_summary(sid, "Old summary")
+
+    with patch("api.main._stream_summary_to_ws"):
+        r = client.post(f"/meeting/{sid}/summary/regenerate")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cached"] is False
+    assert "summary_id" in data
+
+
+def test_summary_unknown_session_returns_404(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/summary")
+    assert r.status_code == 404

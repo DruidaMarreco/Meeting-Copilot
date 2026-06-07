@@ -100,6 +100,45 @@ def answer(
         return _extract_content(ollama.chat(model=model, messages=messages))
 
 
+SUMMARY_PROMPT = """You are a meeting assistant. Summarize the following meeting transcript.
+
+Rules:
+- Write a concise executive summary (3-5 sentences).
+- Then list the key decisions, action items, and topics discussed as bullet points.
+- Use only information from the transcript — no speculation.
+- If the transcript is empty or too short, say "Not enough content to summarize."
+
+Meeting transcript:
+{transcript}"""
+
+
+def summarize(
+    session_id: str,
+    model: str = DEFAULT_MODEL,
+    stream: bool = False,
+) -> str | Generator[str, None, None]:
+    """Generate a structured summary of the full meeting transcript."""
+    utterances = db.get_utterances(session_id)
+    if not utterances:
+        transcript = "(No transcript available)"
+    else:
+        lines = [f"[{u['start_time']:.0f}s] {u['text']}" for u in utterances]
+        transcript = "\n".join(lines)
+
+    prompt = SUMMARY_PROMPT.format(transcript=transcript)
+    messages = [{"role": "user", "content": prompt}]
+
+    if stream:
+
+        def _stream_gen():
+            for chunk in ollama.chat(model=model, messages=messages, stream=True):
+                yield _extract_content(chunk)
+
+        return _stream_gen()
+    else:
+        return _extract_content(ollama.chat(model=model, messages=messages))
+
+
 def check_ollama(model: str = DEFAULT_MODEL) -> bool:
     """Return True if Ollama is running and the requested model is available."""
     try:

@@ -29,7 +29,8 @@ def init_db():
                 id          TEXT PRIMARY KEY,
                 title       TEXT,
                 started_at  TEXT NOT NULL,
-                ended_at    TEXT
+                ended_at    TEXT,
+                summary     TEXT
             );
 
             CREATE TABLE IF NOT EXISTS utterances (
@@ -45,6 +46,10 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_utterances_session
                 ON utterances(session_id, start_time);
         """)
+        # Migrate: add summary column to existing databases
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+        if "summary" not in cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN summary TEXT")
 
 
 @contextmanager
@@ -102,6 +107,14 @@ def delete_session(session_id: str):
     with get_conn() as conn:
         conn.execute("DELETE FROM utterances WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+
+
+def save_summary(session_id: str, summary: str):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET summary = ? WHERE id = ?",
+            (summary, session_id),
+        )
 
 
 # ── Utterances ────────────────────────────────────────────────────────────────
