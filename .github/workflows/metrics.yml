@@ -42,17 +42,13 @@ jobs:
         with:
           version: "latest"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
 
       - name: Run integration tests
-        run: >-
-          uv run
-          --with pytest
-          --with "httpx>=0.27.0"
-          --with "fastapi>=0.111.0"
-          --with "pydantic>=2.7.0"
-          --with python-multipart
-          --with aiofiles
-          pytest src/tests/integration_testing/ -v --tb=short
+        run: uv run pytest src/tests/integration_testing/ -v --tb=short
 
   # ── Mass Tests ───────────────────────────────────────────────────────────────
   mass-tests:
@@ -71,14 +67,10 @@ jobs:
         with:
           version: "latest"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
 
       - name: Run mass tests
-        run: >-
-          uv run
-          --with pytest
-          --with "httpx>=0.27.0"
-          --with "fastapi>=0.111.0"
-          --with "pydantic>=2.7.0"
-          --with python-multipart
-          --with aiofiles
-          pytest src/tests/mass_testing/ -v --tb=short
+        run: uv run pytest src/tests/mass_testing/ -v --tb=short

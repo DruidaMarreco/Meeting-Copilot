@@ -22,15 +22,19 @@ jobs:
         with:
           version: "latest"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dev dependencies
+        run: uv sync --extra dev
 
       - name: black — formatting check
-        run: uv run --with black black --check --diff .
+        run: uv run black --check --diff .
 
       - name: ruff — lint check
-        run: uv run --with "ruff>=0.6.0" ruff check .
+        run: uv run ruff check .
 
       - name: ty — type check
-        run: uv run --with ty ty check .
+        run: uv run ty check .
 
   # ── Unit Tests ───────────────────────────────────────────────────────────────
   unit-tests:
@@ -45,14 +49,10 @@ jobs:
         with:
           version: "latest"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dev dependencies
+        run: uv sync --extra dev
 
       - name: Run pytest
-        run: >-
-          uv run
-          --with pytest
-          --with "httpx>=0.27.0"
-          --with "fastapi>=0.111.0"
-          --with "pydantic>=2.7.0"
-          --with python-multipart
-          --with aiofiles
-          pytest src/tests/unit_testing/
+        run: uv run pytest
