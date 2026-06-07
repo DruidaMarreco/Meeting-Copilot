@@ -2,8 +2,8 @@
 Central configuration — read from environment variables, fall back to defaults.
 
 Override any value by setting the env var before starting the server:
-  WHISPER_MODEL_SIZE=medium uvicorn api.main:app
-  OLLAMA_MODEL=mistral uvicorn api.main:app
+  WHISPER_MODEL_SIZE=medium uvicorn meeting_copilot.api.main:app
+  OLLAMA_MODEL=mistral uvicorn meeting_copilot.api.main:app
 """
 
 import os

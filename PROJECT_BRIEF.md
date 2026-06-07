@@ -78,7 +78,7 @@ Cloud is optional sync, not a dependency. Phase 2 evolves this into a broader pe
 
 ## Go/No-Go Gate for M1
 
-Run `python -m audio.capture` during a real Zoom/Meet call. If WASAPI loopback picks up the other participants — proceed. If not, debug loopback device enumeration before anything else.
+Run `python -m meeting_copilot.audio.capture` during a real Zoom/Meet call. If WASAPI loopback picks up the other participants — proceed. If not, debug loopback device enumeration before anything else.
 
 ---
 

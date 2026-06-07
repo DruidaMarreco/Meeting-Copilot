@@ -26,15 +26,15 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from api import ws as websocket_manager
-from audio.capture import AudioCapture
-from config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_MODEL_SIZE
-from llm.query import answer as llm_answer
-from llm.query import check_ollama
-from llm.query import summarize as llm_summarize
-from storage import db, init_db, save_summary, save_utterance, vector_store
-from storage import delete_session as db_delete_session
-from transcription.engine import TranscriptChunk, TranscriptionEngine
+from meeting_copilot.api import ws as websocket_manager
+from meeting_copilot.audio.capture import AudioCapture
+from meeting_copilot.config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_MODEL_SIZE
+from meeting_copilot.llm.query import answer as llm_answer
+from meeting_copilot.llm.query import check_ollama
+from meeting_copilot.llm.query import summarize as llm_summarize
+from meeting_copilot.storage import db, init_db, save_summary, save_utterance, vector_store
+from meeting_copilot.storage import delete_session as db_delete_session
+from meeting_copilot.transcription.engine import TranscriptChunk, TranscriptionEngine
 
 # ── State ─────────────────────────────────────────────────────────────────────
 

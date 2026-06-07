@@ -13,7 +13,7 @@ pip install -r requirements.txt
 ollama pull llama3
 
 # 3. Start the server
-uvicorn api.main:app --reload --port 8000
+uvicorn meeting_copilot.api.main:app --reload --port 8000
 
 # 4. Open the UI
 # Open frontend/index.html in your browser (or serve via the API)
@@ -24,7 +24,7 @@ uvicorn api.main:app --reload --port 8000
 Before anything else, verify loopback capture works during a real call:
 
 ```bash
-python -m audio.capture
+python -m meeting_copilot.audio.capture
 ```
 
 You should see your microphone AND the other participants' audio being captured. If only mic shows — check `audio/capture.py` loopback device enumeration.

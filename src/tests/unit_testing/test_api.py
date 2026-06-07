@@ -14,30 +14,30 @@ from fastapi.testclient import TestClient
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     """TestClient with DB and all hardware deps mocked out."""
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
 
     # Ensure api.main is imported before patch() tries to resolve the target
-    import api.main
+    import meeting_copilot.api.main
 
     mock_capture = MagicMock()
     mock_capture.return_value.start.return_value = []
     mock_engine = MagicMock()
 
     with (
-        patch("api.main.AudioCapture", mock_capture),
-        patch("api.main.TranscriptionEngine", mock_engine),
+        patch("meeting_copilot.api.main.AudioCapture", mock_capture),
+        patch("meeting_copilot.api.main.TranscriptionEngine", mock_engine),
     ):
-        yield TestClient(api.main.app)
+        yield TestClient(meeting_copilot.api.main.app)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
 
 def test_health_endpoint(client):
-    with patch("api.main.check_ollama", return_value=False):
+    with patch("meeting_copilot.api.main.check_ollama", return_value=False):
         r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["ok"] is True
@@ -115,8 +115,8 @@ def test_ptt_returns_question_and_answer_id(client):
     fake_model.transcribe.return_value = ([fake_segment], None)
 
     with (
-        patch("api.main._get_ptt_model", return_value=fake_model),
-        patch("api.main._stream_answer_to_ws"),  # don't actually call ollama
+        patch("meeting_copilot.api.main._get_ptt_model", return_value=fake_model),
+        patch("meeting_copilot.api.main._stream_answer_to_ws"),  # don't actually call ollama
     ):
         r = client.post(
             f"/meeting/{sid}/ptt",
@@ -143,7 +143,7 @@ def test_ptt_unknown_session_returns_404(client):
 
 
 def test_export_txt(client):
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     sid = client.post("/meeting/start", json={"title": "Export Test"}).json()["session_id"]
     db_module.save_utterance(sid, "Hello world", 0.0, 2.0)
@@ -158,7 +158,7 @@ def test_export_txt(client):
 
 
 def test_export_md(client):
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     sid = client.post("/meeting/start", json={"title": "MD Test"}).json()["session_id"]
     db_module.save_utterance(sid, "Markdown content", 5.0, 7.0)
@@ -179,7 +179,7 @@ def test_export_unknown_session(client):
 
 
 def test_delete_meeting(client):
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     sid = client.post("/meeting/start", json={"title": "To Delete"}).json()["session_id"]
     db_module.save_utterance(sid, "Some text", 0.0, 1.0)
@@ -208,7 +208,7 @@ def test_summary_returns_summary_id(client):
     """Posting to /summary for a valid session starts streaming and returns a summary_id."""
     sid = client.post("/meeting/start", json={}).json()["session_id"]
 
-    with patch("api.main._stream_summary_to_ws"):  # don't call ollama
+    with patch("meeting_copilot.api.main._stream_summary_to_ws"):  # don't call ollama
         r = client.post(f"/meeting/{sid}/summary")
 
     assert r.status_code == 200
@@ -219,7 +219,7 @@ def test_summary_returns_summary_id(client):
 
 def test_summary_returns_cached(client):
     """If a summary was previously stored, /summary returns it without streaming."""
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     sid = client.post("/meeting/start", json={}).json()["session_id"]
     db_module.save_summary(sid, "This is the cached summary.")
@@ -233,12 +233,12 @@ def test_summary_returns_cached(client):
 
 def test_summary_regenerate_ignores_cache(client):
     """/summary/regenerate always spawns a new stream even when cache exists."""
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     sid = client.post("/meeting/start", json={}).json()["session_id"]
     db_module.save_summary(sid, "Old summary")
 
-    with patch("api.main._stream_summary_to_ws"):
+    with patch("meeting_copilot.api.main._stream_summary_to_ws"):
         r = client.post(f"/meeting/{sid}/summary/regenerate")
 
     assert r.status_code == 200

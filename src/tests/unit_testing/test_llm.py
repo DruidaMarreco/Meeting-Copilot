@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 def test_extract_content_object_style():
     """SDK >=0.3: response.message.content"""
-    from llm.query import _extract_content
+    from meeting_copilot.llm.query import _extract_content
 
     response = SimpleNamespace(message=SimpleNamespace(content="hello"))
     assert _extract_content(response) == "hello"
@@ -19,14 +19,14 @@ def test_extract_content_object_style():
 
 def test_extract_content_dict_style():
     """SDK <0.3: response["message"]["content"]"""
-    from llm.query import _extract_content
+    from meeting_copilot.llm.query import _extract_content
 
     response = {"message": {"content": "world"}}
     assert _extract_content(response) == "world"
 
 
 def test_extract_content_empty_object():
-    from llm.query import _extract_content
+    from meeting_copilot.llm.query import _extract_content
 
     response = SimpleNamespace(message=SimpleNamespace(content=None))
     assert _extract_content(response) == ""
@@ -41,33 +41,33 @@ def _make_model_obj(name: str):
 
 
 def test_check_ollama_object_style_found():
-    from llm.query import check_ollama
+    from meeting_copilot.llm.query import check_ollama
 
     response = SimpleNamespace(models=[_make_model_obj("llama3:latest")])
-    with patch("llm.query.ollama.list", return_value=response):
+    with patch("meeting_copilot.llm.query.ollama.list", return_value=response):
         assert check_ollama("llama3") is True
 
 
 def test_check_ollama_object_style_not_found():
-    from llm.query import check_ollama
+    from meeting_copilot.llm.query import check_ollama
 
     response = SimpleNamespace(models=[_make_model_obj("mistral:latest")])
-    with patch("llm.query.ollama.list", return_value=response):
+    with patch("meeting_copilot.llm.query.ollama.list", return_value=response):
         assert check_ollama("llama3") is False
 
 
 def test_check_ollama_dict_style_found():
-    from llm.query import check_ollama
+    from meeting_copilot.llm.query import check_ollama
 
     response = {"models": [{"name": "llama3:latest"}]}
-    with patch("llm.query.ollama.list", return_value=response):
+    with patch("meeting_copilot.llm.query.ollama.list", return_value=response):
         assert check_ollama("llama3") is True
 
 
 def test_check_ollama_returns_false_on_exception():
-    from llm.query import check_ollama
+    from meeting_copilot.llm.query import check_ollama
 
-    with patch("llm.query.ollama.list", side_effect=ConnectionError):
+    with patch("meeting_copilot.llm.query.ollama.list", side_effect=ConnectionError):
         assert check_ollama("llama3") is False
 
 
@@ -75,7 +75,7 @@ def test_check_ollama_returns_false_on_exception():
 
 
 def test_answer_non_stream(tmp_path, monkeypatch):
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
@@ -83,10 +83,10 @@ def test_answer_non_stream(tmp_path, monkeypatch):
 
     response_obj = SimpleNamespace(message=SimpleNamespace(content="The budget is $50k."))
     with (
-        patch("llm.query.vector_store.search", return_value=[]),
-        patch("llm.query.ollama.chat", return_value=response_obj),
+        patch("meeting_copilot.llm.query.vector_store.search", return_value=[]),
+        patch("meeting_copilot.llm.query.ollama.chat", return_value=response_obj),
     ):
-        from llm.query import answer
+        from meeting_copilot.llm.query import answer
 
         result = answer(sid, "What is the budget?")
 
@@ -94,7 +94,7 @@ def test_answer_non_stream(tmp_path, monkeypatch):
 
 
 def test_answer_stream(tmp_path, monkeypatch):
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
@@ -106,10 +106,10 @@ def test_answer_stream(tmp_path, monkeypatch):
         SimpleNamespace(message=SimpleNamespace(content="is 42.")),
     ]
     with (
-        patch("llm.query.vector_store.search", return_value=[]),
-        patch("llm.query.ollama.chat", return_value=iter(chunks)),
+        patch("meeting_copilot.llm.query.vector_store.search", return_value=[]),
+        patch("meeting_copilot.llm.query.ollama.chat", return_value=iter(chunks)),
     ):
-        from llm.query import answer
+        from meeting_copilot.llm.query import answer
 
         result = "".join(answer(sid, "What is the answer?", stream=True))
 
@@ -120,7 +120,7 @@ def test_answer_stream(tmp_path, monkeypatch):
 
 
 def test_summarize_non_stream(tmp_path, monkeypatch):
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
@@ -128,8 +128,8 @@ def test_summarize_non_stream(tmp_path, monkeypatch):
     db_module.save_utterance(sid, "We agreed on a Q3 launch.", 0.0, 3.0)
 
     response_obj = SimpleNamespace(message=SimpleNamespace(content="Key decision: Q3 launch."))
-    with patch("llm.query.ollama.chat", return_value=response_obj):
-        from llm.query import summarize
+    with patch("meeting_copilot.llm.query.ollama.chat", return_value=response_obj):
+        from meeting_copilot.llm.query import summarize
 
         result = summarize(sid)
 
@@ -137,7 +137,7 @@ def test_summarize_non_stream(tmp_path, monkeypatch):
 
 
 def test_summarize_stream(tmp_path, monkeypatch):
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
@@ -147,8 +147,8 @@ def test_summarize_stream(tmp_path, monkeypatch):
         SimpleNamespace(message=SimpleNamespace(content="Summary: ")),
         SimpleNamespace(message=SimpleNamespace(content="short meeting.")),
     ]
-    with patch("llm.query.ollama.chat", return_value=iter(chunks)):
-        from llm.query import summarize
+    with patch("meeting_copilot.llm.query.ollama.chat", return_value=iter(chunks)):
+        from meeting_copilot.llm.query import summarize
 
         result = "".join(summarize(sid, stream=True))
 
@@ -157,7 +157,7 @@ def test_summarize_stream(tmp_path, monkeypatch):
 
 def test_summarize_empty_session(tmp_path, monkeypatch):
     """Summarizing a session with no utterances should still call ollama (with empty transcript note)."""
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
@@ -166,8 +166,8 @@ def test_summarize_empty_session(tmp_path, monkeypatch):
     response_obj = SimpleNamespace(
         message=SimpleNamespace(content="Not enough content to summarize.")
     )
-    with patch("llm.query.ollama.chat", return_value=response_obj) as mock_chat:
-        from llm.query import summarize
+    with patch("meeting_copilot.llm.query.ollama.chat", return_value=response_obj) as mock_chat:
+        from meeting_copilot.llm.query import summarize
 
         result = summarize(sid)
 

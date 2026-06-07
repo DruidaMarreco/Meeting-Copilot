@@ -18,8 +18,8 @@ from collections.abc import Generator
 
 import ollama
 
-from config import OLLAMA_MODEL
-from storage import db, vector_store
+from meeting_copilot.config import OLLAMA_MODEL
+from meeting_copilot.storage import db, vector_store
 
 DEFAULT_MODEL = OLLAMA_MODEL
 CONTEXT_WINDOW_SECONDS = 300  # last 5 minutes always included

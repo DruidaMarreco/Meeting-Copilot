@@ -9,7 +9,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def isolated_db(tmp_path, monkeypatch):
     """Redirect DB_PATH to a temp file for every test."""
-    import storage.db as db_module
+    import meeting_copilot.storage.db as db_module
 
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     db_module.init_db()
@@ -20,14 +20,14 @@ def isolated_db(tmp_path, monkeypatch):
 
 
 def test_create_session_returns_id():
-    from storage.db import create_session
+    from meeting_copilot.storage.db import create_session
 
     sid, _title = create_session("Stand-up")
     assert isinstance(sid, str) and len(sid) == 36  # UUID
 
 
 def test_get_session_fields():
-    from storage.db import create_session, get_session
+    from meeting_copilot.storage.db import create_session, get_session
 
     sid, _ = create_session("Weekly review")
     s = get_session(sid)
@@ -38,7 +38,7 @@ def test_get_session_fields():
 
 
 def test_end_session_sets_ended_at():
-    from storage.db import create_session, end_session, get_session
+    from meeting_copilot.storage.db import create_session, end_session, get_session
 
     sid, _ = create_session()
     end_session(sid)
@@ -48,7 +48,7 @@ def test_end_session_sets_ended_at():
 
 
 def test_list_sessions_contains_all():
-    from storage.db import create_session, list_sessions
+    from meeting_copilot.storage.db import create_session, list_sessions
 
     for i in range(3):
         create_session(f"Meeting {i}")
@@ -60,7 +60,7 @@ def test_list_sessions_contains_all():
 
 
 def test_get_nonexistent_session_returns_none():
-    from storage.db import get_session
+    from meeting_copilot.storage.db import get_session
 
     assert get_session("00000000-0000-0000-0000-000000000000") is None
 
@@ -69,7 +69,7 @@ def test_get_nonexistent_session_returns_none():
 
 
 def test_save_and_get_utterances():
-    from storage.db import create_session, get_utterances, save_utterance
+    from meeting_copilot.storage.db import create_session, get_utterances, save_utterance
 
     sid, _ = create_session()
     save_utterance(sid, "Hello world", 0.0, 1.5)
@@ -81,7 +81,7 @@ def test_save_and_get_utterances():
 
 
 def test_utterances_ordered_by_start_time():
-    from storage.db import create_session, get_utterances, save_utterance
+    from meeting_copilot.storage.db import create_session, get_utterances, save_utterance
 
     sid, _ = create_session()
     save_utterance(sid, "Late", 10.0, 11.0)
@@ -92,7 +92,7 @@ def test_utterances_ordered_by_start_time():
 
 
 def test_get_recent_utterances_window():
-    from storage.db import create_session, get_recent_utterances, save_utterance
+    from meeting_copilot.storage.db import create_session, get_recent_utterances, save_utterance
 
     sid, _ = create_session()
     save_utterance(sid, "Old", 0.0, 1.0)
@@ -105,7 +105,7 @@ def test_get_recent_utterances_window():
 
 
 def test_utterances_isolated_per_session():
-    from storage.db import create_session, get_utterances, save_utterance
+    from meeting_copilot.storage.db import create_session, get_utterances, save_utterance
 
     s1, _ = create_session()
     s2, _ = create_session()
