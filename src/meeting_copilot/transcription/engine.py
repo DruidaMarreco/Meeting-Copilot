@@ -17,7 +17,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
-from faster_whisper import WhisperModel
 
 from meeting_copilot.config import (
     WHISPER_COMPUTE_TYPE,
@@ -56,6 +55,13 @@ class TranscriptionEngine:
         on_transcript: Callable[[TranscriptChunk], None] | None = None,
         language: str = WHISPER_LANGUAGE,
     ):
+        try:
+            from faster_whisper import WhisperModel  # noqa: PLC0415
+        except ImportError as exc:
+            raise RuntimeError(
+                "faster_whisper is not installed. Run: uv sync --extra full"
+            ) from exc
+
         print(f"[transcription] Loading faster-whisper {model_size} ({device}/{compute_type})…")
         self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
         self.on_transcript = on_transcript
