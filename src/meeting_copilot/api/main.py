@@ -469,6 +469,10 @@ class BulkExportRequest(BaseModel):
     format: str = "txt"
 
 
+class BulkDeleteRequest(BaseModel):
+    session_ids: list[str]
+
+
 @app.get("/meeting/{session_id}/notes")
 async def get_notes(session_id: str):
     session = db.get_session(session_id)
@@ -665,6 +669,23 @@ async def bulk_export(req: BulkExportRequest):
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=meetings_export.zip"},
     )
+
+
+@app.post("/meeting/bulk-delete")
+async def bulk_delete(req: BulkDeleteRequest):
+    if not req.session_ids:
+        raise HTTPException(status_code=400, detail="session_ids cannot be empty")
+
+    deleted_count = 0
+    for session_id in req.session_ids:
+        state = _active_sessions.pop(session_id, None)
+        if state:
+            _stop_session(session_id, state)
+        db_delete_session(session_id)
+        vector_store.delete_session(session_id)
+        deleted_count += 1
+
+    return {"ok": True, "deleted_count": deleted_count}
 
 
 # ── Summary ───────────────────────────────────────────────────────────────────

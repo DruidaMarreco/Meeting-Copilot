@@ -952,3 +952,51 @@ def test_bulk_export_default_format(client):
 
     with zf.ZipFile(io.BytesIO(r.content)) as z:
         assert z.namelist()[0].endswith(".txt")
+
+
+# ── Bulk Delete ────────────────────────────────────────────────────────────────
+
+
+def test_bulk_delete_meetings(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-delete", json={"session_ids": [s1, s2]})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert r.json()["deleted_count"] == 2
+
+    # Verify they're deleted
+    assert client.get(f"/meeting/{s1}/stats").status_code == 404
+    assert client.get(f"/meeting/{s2}/stats").status_code == 404
+
+
+def test_bulk_delete_empty_list(client):
+    r = client.post("/meeting/bulk-delete", json={"session_ids": []})
+    assert r.status_code == 400
+    assert "cannot be empty" in r.json()["detail"]
+
+
+def test_bulk_delete_skips_missing_sessions(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    unknown_id = "00000000-0000-0000-0000-000000000000"
+
+    r = client.post(
+        "/meeting/bulk-delete",
+        json={"session_ids": [s1, unknown_id]},
+    )
+    assert r.status_code == 200
+    assert r.json()["deleted_count"] == 2  # Counts both attempts
+
+    # Verify existing session is deleted
+    assert client.get(f"/meeting/{s1}/stats").status_code == 404
+
+
+def test_bulk_delete_active_session(client):
+    s1 = client.post("/meeting/start", json={"title": "Active Meeting"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-delete", json={"session_ids": [s1]})
+    assert r.status_code == 200
+
+    # Verify it's deleted
+    assert client.get(f"/meeting/{s1}/stats").status_code == 404
