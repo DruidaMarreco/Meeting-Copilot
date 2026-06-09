@@ -1168,3 +1168,87 @@ def test_clone_meeting_independent_session(client):
     # Verify cloned session is independent
     new_notes = client.get(f"/meeting/{new_id}/notes").json()["notes"]
     assert new_notes == "Original notes"
+
+
+# ── Export ─────────────────────────────────────────────────────────────────────
+
+
+def test_export_meeting_stats_csv(client):
+    import csv as csv_module
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    # Add some tags
+    client.post(f"/meeting/{s1}/tags", json={"tag": "important"})
+    client.post(f"/meeting/{s2}/tags", json={"tag": "review"})
+
+    r = client.get("/meeting/export/stats")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "text/csv; charset=utf-8"
+
+    # Parse CSV
+    lines = r.text.strip().split("\n")
+    reader = csv_module.DictReader(lines)
+    rows = list(reader)
+
+    assert len(rows) >= 2
+    titles = {row["title"] for row in rows}
+    assert "Meeting 1" in titles
+    assert "Meeting 2" in titles
+
+
+def test_export_stats_csv_includes_tags(client):
+    import csv as csv_module
+
+    s1 = client.post("/meeting/start", json={"title": "Tagged Meeting"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "important"})
+    client.post(f"/meeting/{s1}/tags", json={"tag": "urgent"})
+
+    r = client.get("/meeting/export/stats")
+    lines = r.text.strip().split("\n")
+    reader = csv_module.DictReader(lines)
+    rows = list(reader)
+
+    meeting_row = next((row for row in rows if row["title"] == "Tagged Meeting"), None)
+    assert meeting_row is not None
+    assert "important" in meeting_row["tags"]
+    assert "urgent" in meeting_row["tags"]
+    assert ";" in meeting_row["tags"]  # Tags are separated by semicolon
+
+
+def test_export_stats_csv_includes_starred(client):
+    import csv as csv_module
+
+    s1 = client.post("/meeting/start", json={"title": "Starred Meeting"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Not Starred"}).json()["session_id"]
+
+    client.post(f"/meeting/{s1}/star")
+
+    r = client.get("/meeting/export/stats")
+    lines = r.text.strip().split("\n")
+    reader = csv_module.DictReader(lines)
+    rows = list(reader)
+
+    starred_row = next((row for row in rows if row["title"] == "Starred Meeting"), None)
+    not_starred_row = next((row for row in rows if row["title"] == "Not Starred"), None)
+
+    assert starred_row is not None
+    assert not_starred_row is not None
+    assert starred_row["is_starred"] == "1"
+    assert not_starred_row["is_starred"] == "0"
+
+
+def test_export_stats_csv_has_headers(client):
+    r = client.get("/meeting/export/stats")
+    lines = r.text.strip().split("\n")
+    headers = lines[0].split(",")
+
+    assert "session_id" in headers
+    assert "title" in headers
+    assert "duration_seconds" in headers
+    assert "utterance_count" in headers
+    assert "word_count" in headers
+    assert "answer_count" in headers
+    assert "is_starred" in headers
+    assert "tags" in headers

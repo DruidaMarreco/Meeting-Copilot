@@ -14,6 +14,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import csv
 import io
 import os
 import re
@@ -542,6 +543,56 @@ async def get_meeting_insights():
 async def get_recent_meeting_insights(days: int = Query(default=7, ge=1, le=365)):
     """Return insights for meetings in the last N days."""
     return get_recent_insights(days=days)
+
+
+@app.get("/meeting/export/stats")
+async def export_meeting_stats_csv():
+    """Export all meeting statistics as CSV file."""
+    sessions = db.list_sessions(limit=1000)  # Fetch up to 1000 sessions
+
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "session_id",
+            "title",
+            "started_at",
+            "ended_at",
+            "duration_seconds",
+            "utterance_count",
+            "word_count",
+            "answer_count",
+            "is_starred",
+            "tags",
+        ],
+    )
+    writer.writeheader()
+
+    for session in sessions:
+        stats = get_session_stats(session["id"]) or {}
+        session_tags = get_tags(session["id"])
+
+        writer.writerow(
+            {
+                "session_id": session["id"],
+                "title": session.get("title", ""),
+                "started_at": session.get("started_at", ""),
+                "ended_at": session.get("ended_at", ""),
+                "duration_seconds": stats.get("duration_seconds", ""),
+                "utterance_count": stats.get("utterance_count", 0),
+                "word_count": stats.get("word_count", 0),
+                "answer_count": stats.get("answer_count", 0),
+                "is_starred": session.get("is_starred", 0),
+                "tags": ";".join(session_tags) if session_tags else "",
+            }
+        )
+
+    csv_content = output.getvalue()
+    return Response(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=meeting_stats.csv"},
+    )
 
 
 @app.get("/meeting/{session_id}/stats")
