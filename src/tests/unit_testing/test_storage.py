@@ -475,3 +475,69 @@ def test_insights_include_tags():
     insights = get_insights()
     tags = {t["tag"] for t in insights.get("top_tags", [])}
     assert "product" in tags or "planning" in tags  # at least one should show
+
+
+# ── Stars ─────────────────────────────────────────────────────────────────────
+
+
+def test_star_and_unstar_session():
+    from meeting_copilot.storage.db import create_session, is_starred, star_session, unstar_session
+
+    sid, _ = create_session("Important meeting")
+    assert is_starred(sid) is False
+
+    star_session(sid)
+    assert is_starred(sid) is True
+
+    unstar_session(sid)
+    assert is_starred(sid) is False
+
+
+def test_get_starred_sessions():
+    from meeting_copilot.storage.db import (
+        create_session,
+        get_starred_sessions,
+        star_session,
+    )
+
+    s1, _ = create_session("First")
+    s2, _ = create_session("Second")
+    star_session(s1)
+    star_session(s2)
+
+    starred = get_starred_sessions()
+    ids = {s["id"] for s in starred}
+    assert s1 in ids and s2 in ids
+
+
+def test_count_starred_sessions():
+    from meeting_copilot.storage.db import (
+        count_starred_sessions,
+        create_session,
+        star_session,
+    )
+
+    s1, _ = create_session("Starred")
+    s2, _ = create_session("Not starred")
+    star_session(s1)
+
+    count = count_starred_sessions()
+    assert count >= 1
+
+
+def test_starred_sessions_include_tags():
+    from meeting_copilot.storage.db import (
+        add_tag,
+        create_session,
+        get_starred_sessions,
+        star_session,
+    )
+
+    sid, _ = create_session("Tagged and starred")
+    add_tag(sid, "important")
+    star_session(sid)
+
+    sessions = get_starred_sessions()
+    match = next((s for s in sessions if s["id"] == sid), None)
+    assert match is not None
+    assert "important" in match["tags"]

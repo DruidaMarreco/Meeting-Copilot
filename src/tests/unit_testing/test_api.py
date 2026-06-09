@@ -809,3 +809,51 @@ def test_get_recent_insights_invalid_days(client):
 
     r = client.get("/insights/recent?days=400")
     assert r.status_code == 422  # exceeds max
+
+
+# ── Stars ─────────────────────────────────────────────────────────────────────
+
+
+def test_star_meeting(client):
+    sid = client.post("/meeting/start", json={"title": "Important"}).json()["session_id"]
+    r = client.post(f"/meeting/{sid}/star")
+    assert r.status_code == 200
+    assert r.json()["starred"] is True
+
+
+def test_unstar_meeting(client):
+    sid = client.post("/meeting/start", json={"title": "Unimportant"}).json()["session_id"]
+    client.post(f"/meeting/{sid}/star")
+    r = client.delete(f"/meeting/{sid}/star")
+    assert r.status_code == 200
+    assert r.json()["starred"] is False
+
+
+def test_get_star_status(client):
+    sid = client.post("/meeting/start", json={"title": "Test"}).json()["session_id"]
+    r = client.get(f"/meeting/{sid}/star")
+    assert r.status_code == 200
+    assert r.json()["starred"] is False
+
+    client.post(f"/meeting/{sid}/star")
+    r = client.get(f"/meeting/{sid}/star")
+    assert r.json()["starred"] is True
+
+
+def test_list_starred_meetings(client):
+    s1 = client.post("/meeting/start", json={"title": "Starred 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Not starred"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/star")
+
+    r = client.get("/meeting/starred/list")
+    assert r.status_code == 200
+    data = r.json()
+    ids = {s["id"] for s in data["sessions"]}
+    assert s1 in ids
+    assert s2 not in ids
+    assert data["total"] >= 1
+
+
+def test_star_unknown_session(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/star")
+    assert r.status_code == 404

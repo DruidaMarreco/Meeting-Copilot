@@ -38,12 +38,15 @@ from meeting_copilot.llm.query import summarize as llm_summarize
 from meeting_copilot.storage import (
     add_tag,
     count_sessions,
+    count_starred_sessions,
     db,
     get_insights,
     get_recent_insights,
     get_session_stats,
+    get_starred_sessions,
     get_tags,
     init_db,
+    is_starred,
     list_all_tags,
     remove_tag,
     save_action_items,
@@ -53,6 +56,8 @@ from meeting_copilot.storage import (
     save_utterance,
     search_all_sessions,
     search_utterances,
+    star_session,
+    unstar_session,
     vector_store,
 )
 from meeting_copilot.storage import delete_session as db_delete_session
@@ -411,6 +416,46 @@ async def remove_tag_from_meeting(session_id: str, tag: str):
         raise HTTPException(status_code=404, detail="Session not found")
     remove_tag(session_id, tag)
     return {"ok": True, "tags": get_tags(session_id)}
+
+
+# ── Stars ─────────────────────────────────────────────────────────────────────
+
+
+@app.post("/meeting/{session_id}/star")
+async def star_meeting(session_id: str):
+    """Mark a meeting as starred/favorite."""
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    star_session(session_id)
+    return {"ok": True, "starred": True}
+
+
+@app.delete("/meeting/{session_id}/star")
+async def unstar_meeting(session_id: str):
+    """Unmark a meeting as starred."""
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    unstar_session(session_id)
+    return {"ok": True, "starred": False}
+
+
+@app.get("/meeting/{session_id}/star")
+async def get_star_status(session_id: str):
+    """Check if a meeting is starred."""
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session_id": session_id, "starred": is_starred(session_id)}
+
+
+@app.get("/meeting/starred/list")
+async def list_starred_meetings(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    """List all starred meetings, newest first."""
+    sessions = get_starred_sessions(limit=limit, offset=offset)
+    total = count_starred_sessions()
+    return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
 
 
 class NotesRequest(BaseModel):

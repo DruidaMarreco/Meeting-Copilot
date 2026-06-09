@@ -1,5 +1,6 @@
 from .db import add_tag as add_tag
 from .db import count_sessions as count_sessions
+from .db import count_starred_sessions as count_starred_sessions
 from .db import create_session as create_session
 from .db import delete_session as delete_session
 from .db import end_session as end_session
@@ -8,9 +9,11 @@ from .db import get_insights as get_insights
 from .db import get_recent_insights as get_recent_insights
 from .db import get_recent_utterances as get_recent_utterances
 from .db import get_session_stats as get_session_stats
+from .db import get_starred_sessions as get_starred_sessions
 from .db import get_tags as get_tags
 from .db import get_utterances as get_utterances
 from .db import init_db as init_db
+from .db import is_starred as is_starred
 from .db import list_all_tags as list_all_tags
 from .db import remove_tag as remove_tag
 from .db import save_action_items as save_action_items
@@ -20,6 +23,8 @@ from .db import save_summary as save_summary
 from .db import save_utterance as save_utterance
 from .db import search_all_sessions as search_all_sessions
 from .db import search_utterances as search_utterances
+from .db import star_session as star_session
+from .db import unstar_session as unstar_session
 from .db import update_session_title as update_session_title
 from .vector_store import add_utterance as add_utterance
 from .vector_store import search as search

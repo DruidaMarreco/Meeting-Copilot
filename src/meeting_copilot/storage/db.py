@@ -74,6 +74,8 @@ def init_db():
             conn.execute("ALTER TABLE sessions ADD COLUMN action_items TEXT")
         if "notes" not in session_cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN notes TEXT")
+        if "is_starred" not in session_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN is_starred INTEGER DEFAULT 0")
 
 
 @contextmanager
@@ -396,6 +398,62 @@ def list_all_tags() -> list[str]:
     with get_conn() as conn:
         rows = conn.execute("SELECT DISTINCT tag FROM session_tags ORDER BY tag ASC").fetchall()
         return [r["tag"] for r in rows]
+
+
+# ── Stars ─────────────────────────────────────────────────────────────────────
+
+
+def star_session(session_id: str):
+    """Mark a session as starred/favorite."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET is_starred = 1 WHERE id = ?",
+            (session_id,),
+        )
+
+
+def unstar_session(session_id: str):
+    """Unmark a session as starred."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET is_starred = 0 WHERE id = ?",
+            (session_id,),
+        )
+
+
+def is_starred(session_id: str) -> bool:
+    """Check if a session is starred."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT is_starred FROM sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        return bool(row["is_starred"]) if row else False
+
+
+def get_starred_sessions(limit: int = 20, offset: int = 0) -> list[dict]:
+    """Return starred sessions, newest first."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM sessions WHERE is_starred = 1
+               ORDER BY started_at DESC LIMIT ? OFFSET ?""",
+            (limit, offset),
+        ).fetchall()
+        sessions = [dict(r) for r in rows]
+        for s in sessions:
+            tag_rows = conn.execute(
+                "SELECT tag FROM session_tags WHERE session_id = ? ORDER BY tag ASC",
+                (s["id"],),
+            ).fetchall()
+            s["tags"] = [r["tag"] for r in tag_rows]
+        return sessions
+
+
+def count_starred_sessions() -> int:
+    """Count total starred sessions."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) AS cnt FROM sessions WHERE is_starred = 1").fetchone()
+        return int(row["cnt"])
 
 
 # ── Insights ──────────────────────────────────────────────────────────────────
