@@ -1,3 +1,4 @@
+from .db import count_sessions as count_sessions
 from .db import create_session as create_session
 from .db import delete_session as delete_session
 from .db import end_session as end_session
@@ -8,6 +9,7 @@ from .db import get_utterances as get_utterances
 from .db import init_db as init_db
 from .db import save_action_items as save_action_items
 from .db import save_answer as save_answer
+from .db import save_notes as save_notes
 from .db import save_summary as save_summary
 from .db import save_utterance as save_utterance
 from .db import search_all_sessions as search_all_sessions

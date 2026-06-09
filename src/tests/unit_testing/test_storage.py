@@ -59,6 +59,41 @@ def test_list_sessions_contains_all():
     assert {"Meeting 0", "Meeting 1", "Meeting 2"}.issubset(titles)
 
 
+def test_list_sessions_pagination():
+    from meeting_copilot.storage.db import count_sessions, create_session, list_sessions
+
+    for i in range(5):
+        create_session(f"Page {i}")
+    total = count_sessions()
+    assert total >= 5
+
+    page1 = list_sessions(limit=3, offset=0)
+    page2 = list_sessions(limit=3, offset=3)
+    assert len(page1) == 3
+    ids1 = {s["id"] for s in page1}
+    ids2 = {s["id"] for s in page2}
+    assert not ids1 & ids2  # no overlap
+
+
+def test_save_and_get_notes():
+    from meeting_copilot.storage.db import create_session, get_session, save_notes
+
+    sid, _ = create_session("Notes test")
+    save_notes(sid, "Remember to follow up with Alice.")
+    s = get_session(sid)
+    assert s is not None
+    assert s["notes"] == "Remember to follow up with Alice."
+
+
+def test_notes_defaults_none():
+    from meeting_copilot.storage.db import create_session, get_session
+
+    sid, _ = create_session()
+    s = get_session(sid)
+    assert s is not None
+    assert s["notes"] is None
+
+
 def test_get_nonexistent_session_returns_none():
     from meeting_copilot.storage.db import get_session
 

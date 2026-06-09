@@ -63,6 +63,8 @@ def init_db():
             conn.execute("ALTER TABLE sessions ADD COLUMN summary TEXT")
         if "action_items" not in session_cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN action_items TEXT")
+        if "notes" not in session_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN notes TEXT")
 
 
 @contextmanager
@@ -108,12 +110,19 @@ def get_session(session_id: str) -> dict | None:
         return dict(row) if row else None
 
 
-def list_sessions(limit: int = 20) -> list[dict]:
+def list_sessions(limit: int = 20, offset: int = 0) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?", (limit,)
+            "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def count_sessions() -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()
+        return int(row["cnt"])
 
 
 def delete_session(session_id: str):
@@ -121,6 +130,14 @@ def delete_session(session_id: str):
         conn.execute("DELETE FROM utterances WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM answers WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+
+
+def save_notes(session_id: str, notes: str):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET notes = ? WHERE id = ?",
+            (notes, session_id),
+        )
 
 
 def save_action_items(session_id: str, action_items: str):

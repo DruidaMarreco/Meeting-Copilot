@@ -105,9 +105,32 @@ def test_list_meetings(client):
     client.post("/meeting/start", json={"title": "Beta"})
     r = client.get("/meeting/list")
     assert r.status_code == 200
-    titles = [s["title"] for s in r.json()["sessions"]]
+    data = r.json()
+    titles = [s["title"] for s in data["sessions"]]
     assert "Alpha" in titles
     assert "Beta" in titles
+    assert "total" in data
+
+
+def test_list_meetings_pagination(client):
+    for i in range(5):
+        client.post("/meeting/start", json={"title": f"Meeting {i}"})
+
+    r1 = client.get("/meeting/list?limit=3&offset=0")
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert len(d1["sessions"]) == 3
+    assert d1["total"] == 5
+
+    r2 = client.get("/meeting/list?limit=3&offset=3")
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert len(d2["sessions"]) == 2
+
+    # No overlap between pages
+    ids1 = {s["id"] for s in d1["sessions"]}
+    ids2 = {s["id"] for s in d2["sessions"]}
+    assert not ids1 & ids2
 
 
 # ── PTT ───────────────────────────────────────────────────────────────────────
@@ -213,8 +236,59 @@ def test_export_md_includes_qa_and_action_items(client):
     assert "Hire engineer" in r.text
 
 
+def test_export_json(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "JSON Export"}).json()["session_id"]
+    db_module.save_utterance(sid, "Hello JSON world", 0.0, 2.0)
+    db_module.save_answer(sid, "Q?", "A.")
+    client.post(f"/meeting/{sid}/end")
+
+    r = client.get(f"/meeting/{sid}/transcript/export?format=json")
+    assert r.status_code == 200
+    assert "application/json" in r.headers["content-type"]
+    data = r.json()
+    assert data["session"]["title"] == "JSON Export"
+    assert len(data["utterances"]) == 1
+    assert data["utterances"][0]["text"] == "Hello JSON world"
+    assert len(data["answers"]) == 1
+
+
 def test_export_unknown_session(client):
     r = client.get("/meeting/00000000-0000-0000-0000-000000000000/transcript/export")
+    assert r.status_code == 404
+
+
+# ── Notes ─────────────────────────────────────────────────────────────────────
+
+
+def test_get_notes_empty(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    r = client.get(f"/meeting/{sid}/notes")
+    assert r.status_code == 200
+    assert r.json()["notes"] == ""
+
+
+def test_patch_notes_and_retrieve(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    r = client.patch(f"/meeting/{sid}/notes", json={"notes": "Follow up with Bob"})
+    assert r.status_code == 200
+    assert r.json()["notes"] == "Follow up with Bob"
+
+    r2 = client.get(f"/meeting/{sid}/notes")
+    assert r2.json()["notes"] == "Follow up with Bob"
+
+
+def test_notes_unknown_session_returns_404(client):
+    r = client.get("/meeting/00000000-0000-0000-0000-000000000000/notes")
+    assert r.status_code == 404
+
+
+def test_patch_notes_unknown_session_returns_404(client):
+    r = client.patch(
+        "/meeting/00000000-0000-0000-0000-000000000000/notes",
+        json={"notes": "x"},
+    )
     assert r.status_code == 404
 
 

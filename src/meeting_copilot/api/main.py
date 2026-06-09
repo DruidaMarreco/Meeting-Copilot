@@ -35,11 +35,13 @@ from meeting_copilot.llm.query import check_ollama
 from meeting_copilot.llm.query import extract_action_items as llm_action_items
 from meeting_copilot.llm.query import summarize as llm_summarize
 from meeting_copilot.storage import (
+    count_sessions,
     db,
     get_session_stats,
     init_db,
     save_action_items,
     save_answer,
+    save_notes,
     save_summary,
     save_utterance,
     search_all_sessions,
@@ -70,7 +72,9 @@ def _get_ptt_model():
 async def lifespan(app: FastAPI):
     websocket_manager.set_event_loop(asyncio.get_running_loop())
     init_db()
+    heartbeat_task = asyncio.create_task(websocket_manager.heartbeat_loop())
     yield
+    heartbeat_task.cancel()
     # Cleanup: stop all active captures on shutdown
     for session_id, state in list(_active_sessions.items()):
         _stop_session(session_id, state)
@@ -299,8 +303,13 @@ async def push_to_talk(session_id: str, audio: UploadFile = File(...)):
 
 
 @app.get("/meeting/list")
-async def list_meetings():
-    return {"sessions": db.list_sessions()}
+async def list_meetings(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    sessions = db.list_sessions(limit=limit, offset=offset)
+    total = count_sessions()
+    return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/meeting/search")
@@ -323,6 +332,26 @@ async def rename_meeting(session_id: str, req: RenameRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     db.update_session_title(session_id, title)
     return {"ok": True, "title": title}
+
+
+class NotesRequest(BaseModel):
+    notes: str
+
+
+@app.get("/meeting/{session_id}/notes")
+async def get_notes(session_id: str):
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session_id": session_id, "notes": session.get("notes") or ""}
+
+
+@app.patch("/meeting/{session_id}/notes")
+async def update_notes(session_id: str, req: NotesRequest):
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    save_notes(session_id, req.notes)
+    return {"ok": True, "notes": req.notes}
 
 
 @app.get("/meeting/{session_id}/stats")
@@ -410,7 +439,8 @@ def _export_md(
 
 @app.get("/meeting/{session_id}/transcript/export")
 async def export_transcript(
-    session_id: str, format: str = Query(default="txt", pattern="^(txt|md)$")
+    session_id: str,
+    format: str = Query(default="txt", pattern="^(txt|md|json)$"),
 ):
     session = db.get_session(session_id)
     if not session:
@@ -418,6 +448,20 @@ async def export_transcript(
     utterances = db.get_utterances(session_id)
     answers = db.get_answers(session_id)
     name = _safe_filename(session["title"])
+
+    if format == "json":
+        import json as _json  # noqa: PLC0415
+
+        payload = {
+            "session": session,
+            "utterances": utterances,
+            "answers": answers,
+        }
+        return Response(
+            content=_json.dumps(payload, indent=2, default=str),
+            media_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{name}.json"'},
+        )
     if format == "md":
         body = _export_md(session, utterances, answers)
         return Response(

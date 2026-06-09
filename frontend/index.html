@@ -383,6 +383,10 @@
       padding: 2px 8px; font-size: 12px; color: var(--text);
     }
 
+    /* ── Notes ── */
+    textarea { outline: none; transition: border-color 0.15s; }
+    textarea:focus { border-color: var(--accent) !important; }
+
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     @keyframes pulse  { 0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.4); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
     @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
@@ -580,12 +584,21 @@
   }
 
   // ── Session history ────────────────────────────────────────────────────────
-  async function loadPastSessions() {
+  const PAGE_SIZE = 20;
+  let _historyOffset = 0;
+  let _historyTotal = 0;
+  let _historySessions = [];
+
+  async function loadPastSessions(reset = true) {
     if (sessionId) return;
+    if (reset) { _historyOffset = 0; _historySessions = []; }
     try {
-      const res = await fetch(`${API}/meeting/list`);
+      const res = await fetch(`${API}/meeting/list?limit=${PAGE_SIZE}&offset=${_historyOffset}`);
       const data = await res.json();
-      showSessionHistory(data.sessions || []);
+      _historyTotal = data.total ?? 0;
+      _historyOffset += (data.sessions || []).length;
+      _historySessions = [..._historySessions, ...(data.sessions || [])];
+      showSessionHistory(_historySessions, _historyTotal);
     } catch {
       showEmptyState();
     }
@@ -600,7 +613,7 @@
       </div>`;
   }
 
-  function showSessionHistory(sessions) {
+  function showSessionHistory(sessions, total = 0) {
     if (sessionId) return;
     transcript.innerHTML = "";
 
@@ -608,14 +621,10 @@
 
     const header = document.createElement("div");
     header.className = "history-header";
-    header.textContent = "Past meetings";
+    header.textContent = `Past meetings (${total})`;
     transcript.appendChild(header);
 
-    const sorted = [...sessions].sort((a, b) =>
-      (b.started_at || "").localeCompare(a.started_at || "")
-    );
-
-    sorted.forEach(s => {
+    sessions.forEach(s => {
       const item = document.createElement("div");
       item.className = "session-item";
       const date = s.started_at ? new Date(s.started_at.replace(" ", "T") + "Z").toLocaleString() : "—";
@@ -645,6 +654,14 @@
       item.appendChild(actions);
       transcript.appendChild(item);
     });
+
+    if (sessions.length < total) {
+      const loadMore = document.createElement("button");
+      loadMore.style.cssText = "width:100%; margin-top:8px; background:var(--surface); border:1px solid var(--border); color:var(--text-muted); padding:8px; border-radius:6px; cursor:pointer; font-size:13px;";
+      loadMore.textContent = `Load more (${total - sessions.length} remaining)`;
+      loadMore.addEventListener("click", () => loadPastSessions(false));
+      transcript.appendChild(loadMore);
+    }
   }
 
   async function loadSession(id, title) {
@@ -701,8 +718,45 @@
       exportBar.innerHTML = `
         <span style="font-size:12px; color:var(--text-muted);">Export:</span>
         <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=txt" download>TXT</a>
-        <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=md" download>Markdown</a>`;
+        <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=md" download>Markdown</a>
+        <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=json" download>JSON</a>`;
       transcript.appendChild(exportBar);
+
+      // Notes card
+      const notesCard = document.createElement("div");
+      notesCard.style.cssText = "margin-bottom:10px;";
+      const notesToggle = document.createElement("button");
+      notesToggle.style.cssText = "background:none; border:none; color:var(--text-muted); font-size:12px; cursor:pointer; padding:0; margin-bottom:4px;";
+      notesToggle.textContent = "📝 Notes ▸";
+      const notesArea = document.createElement("textarea");
+      notesArea.style.cssText = "display:none; width:100%; min-height:80px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:13px; resize:vertical; font-family:inherit; line-height:1.5;";
+      notesArea.placeholder = "Add your personal notes for this meeting…";
+      notesToggle.addEventListener("click", () => {
+        const open = notesArea.style.display === "none";
+        notesArea.style.display = open ? "block" : "none";
+        notesToggle.textContent = open ? "📝 Notes ▾" : "📝 Notes ▸";
+      });
+      let _notesTimer = null;
+      notesArea.addEventListener("input", () => {
+        clearTimeout(_notesTimer);
+        _notesTimer = setTimeout(async () => {
+          try {
+            await fetch(`${API}/meeting/${id}/notes`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ notes: notesArea.value }),
+            });
+          } catch { /* best-effort autosave */ }
+        }, 800);
+      });
+      // Pre-fill notes
+      fetch(`${API}/meeting/${id}/notes`)
+        .then(r => r.json())
+        .then(d => { if (d.notes) notesArea.value = d.notes; })
+        .catch(() => {});
+      notesCard.appendChild(notesToggle);
+      notesCard.appendChild(notesArea);
+      transcript.appendChild(notesCard);
 
       // Summary card and action items card (past session view)
       const pastAiCard = buildPastActionItemsCard(id);
@@ -1141,6 +1195,7 @@
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
+      if (msg.type === "ping")                return; // keepalive — ignore
       if (msg.type === "utterance")           addUtterance(msg);
       if (msg.type === "answer_start")        startAnswer(msg);
       if (msg.type === "answer_token")        appendToken(msg);
