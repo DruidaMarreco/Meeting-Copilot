@@ -30,12 +30,23 @@ def _ollama():
         raise RuntimeError("ollama is not installed. Run: uv sync --extra full") from exc
 
 
+def _current_model(model: str | None) -> str:
+    """Return explicit model override, or the runtime-configured default."""
+    if model is not None:
+        return model
+    try:
+        from meeting_copilot import runtime_settings  # noqa: PLC0415
+
+        return runtime_settings.get_ollama_model()
+    except Exception:
+        return OLLAMA_MODEL
+
+
 DEFAULT_MODEL = OLLAMA_MODEL
 CONTEXT_WINDOW_SECONDS = 300  # last 5 minutes always included
 TOP_K_SEMANTIC = 5
 
-
-SYSTEM_PROMPT = """You are a meeting assistant. You can ONLY answer questions based on the meeting transcript provided below.
+_DEFAULT_QA_PROMPT = """You are a meeting assistant. You can ONLY answer questions based on the meeting transcript provided below.
 
 Rules:
 - If the answer is in the transcript, answer concisely and directly.
@@ -46,6 +57,16 @@ Rules:
 
 Meeting transcript context:
 {context}"""
+
+
+def _get_qa_system_prompt() -> str:
+    """Get the Q&A system prompt, respecting runtime customization."""
+    try:
+        from meeting_copilot import runtime_settings  # noqa: PLC0415
+
+        return runtime_settings.get_system_prompt_qa()
+    except Exception:
+        return _DEFAULT_QA_PROMPT
 
 
 def _build_context(session_id: str, question: str) -> str:
@@ -83,7 +104,7 @@ def _extract_content(chunk_or_response) -> str:
 def answer(
     session_id: str,
     question: str,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     stream: bool = False,
 ) -> str | Generator[str, None, None]:
     """
@@ -91,8 +112,10 @@ def answer(
 
     Returns a full string or a generator of text chunks when stream=True.
     """
+    resolved = _current_model(model)
     context = _build_context(session_id, question)
-    system = SYSTEM_PROMPT.format(context=context)
+    prompt_template = _get_qa_system_prompt()
+    system = prompt_template.format(context=context)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": question},
@@ -101,15 +124,15 @@ def answer(
     if stream:
 
         def _stream_gen():
-            for chunk in _ollama().chat(model=model, messages=messages, stream=True):
+            for chunk in _ollama().chat(model=resolved, messages=messages, stream=True):
                 yield _extract_content(chunk)
 
         return _stream_gen()
     else:
-        return _extract_content(_ollama().chat(model=model, messages=messages))
+        return _extract_content(_ollama().chat(model=resolved, messages=messages))
 
 
-SUMMARY_PROMPT = """You are a meeting assistant. Summarize the following meeting transcript.
+_DEFAULT_SUMMARY_PROMPT = """You are a meeting assistant. Summarize the following meeting transcript.
 
 Rules:
 - Write a concise executive summary (3-5 sentences).
@@ -121,12 +144,23 @@ Meeting transcript:
 {transcript}"""
 
 
+def _get_summary_system_prompt() -> str:
+    """Get the summary system prompt, respecting runtime customization."""
+    try:
+        from meeting_copilot import runtime_settings  # noqa: PLC0415
+
+        return runtime_settings.get_system_prompt_summary()
+    except Exception:
+        return _DEFAULT_SUMMARY_PROMPT
+
+
 def summarize(
     session_id: str,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     stream: bool = False,
 ) -> str | Generator[str, None, None]:
     """Generate a structured summary of the full meeting transcript."""
+    resolved = _current_model(model)
     utterances = db.get_utterances(session_id)
     if not utterances:
         transcript = "(No transcript available)"
@@ -134,22 +168,106 @@ def summarize(
         lines = [f"[{u['start_time']:.0f}s] {u['text']}" for u in utterances]
         transcript = "\n".join(lines)
 
-    prompt = SUMMARY_PROMPT.format(transcript=transcript)
+    prompt_template = _get_summary_system_prompt()
+    prompt = prompt_template.format(transcript=transcript)
     messages = [{"role": "user", "content": prompt}]
 
     if stream:
 
         def _stream_gen():
-            for chunk in _ollama().chat(model=model, messages=messages, stream=True):
+            for chunk in _ollama().chat(model=resolved, messages=messages, stream=True):
                 yield _extract_content(chunk)
 
         return _stream_gen()
     else:
-        return _extract_content(_ollama().chat(model=model, messages=messages))
+        return _extract_content(_ollama().chat(model=resolved, messages=messages))
 
 
-def check_ollama(model: str = DEFAULT_MODEL) -> bool:
+_DEFAULT_ACTION_ITEMS_PROMPT = """You are a meeting assistant. Extract all action items from the following meeting transcript.
+
+Rules:
+- List ONLY concrete tasks, commitments, or follow-ups that were explicitly mentioned.
+- Format each item as: "- [ ] <action> (owner: <name or 'unassigned'>, due: <date or 'unspecified'>)"
+- If no action items were mentioned, respond with exactly: "No action items found."
+- Do not invent tasks that were not stated. Use only what is in the transcript.
+
+Meeting transcript:
+{transcript}"""
+
+
+def _get_action_items_system_prompt() -> str:
+    """Get the action items system prompt, respecting runtime customization."""
+    try:
+        from meeting_copilot import runtime_settings  # noqa: PLC0415
+
+        return runtime_settings.get_system_prompt_action_items()
+    except Exception:
+        return _DEFAULT_ACTION_ITEMS_PROMPT
+
+
+def extract_action_items(
+    session_id: str,
+    model: str | None = None,
+    stream: bool = False,
+) -> str | Generator[str, None, None]:
+    """Extract action items from the meeting transcript."""
+    resolved = _current_model(model)
+    utterances = db.get_utterances(session_id)
+    if not utterances:
+        transcript = "(No transcript available)"
+    else:
+        lines = [f"[{u['start_time']:.0f}s] {u['text']}" for u in utterances]
+        transcript = "\n".join(lines)
+
+    prompt_template = _get_action_items_system_prompt()
+    prompt = prompt_template.format(transcript=transcript)
+    messages = [{"role": "user", "content": prompt}]
+
+    if stream:
+
+        def _stream_gen():
+            for chunk in _ollama().chat(model=resolved, messages=messages, stream=True):
+                yield _extract_content(chunk)
+
+        return _stream_gen()
+    else:
+        return _extract_content(_ollama().chat(model=resolved, messages=messages))
+
+
+TITLE_PROMPT = """You are a meeting assistant. Generate a concise, descriptive title for the following meeting transcript.
+
+Rules:
+- The title should be 3-8 words that capture the main topic(s) discussed.
+- Do not use generic titles like "Meeting" or "Discussion" alone.
+- Do not include dates or times in the title.
+- Output ONLY the title — no quotes, no punctuation at the end, no explanation.
+- If the transcript is too short or empty, output: Untitled Meeting
+
+Meeting transcript:
+{transcript}"""
+
+
+def generate_title(
+    session_id: str,
+    model: str | None = None,
+) -> str:
+    """Generate a short descriptive title from the meeting transcript."""
+    resolved = _current_model(model)
+    utterances = db.get_utterances(session_id, limit=50)
+    if not utterances:
+        return "Untitled Meeting"
+    lines = [f"[{u['start_time']:.0f}s] {u['text']}" for u in utterances]
+    transcript = "\n".join(lines)[:2000]
+    prompt = TITLE_PROMPT.format(transcript=transcript)
+    messages = [{"role": "user", "content": prompt}]
+    result = _extract_content(_ollama().chat(model=resolved, messages=messages))
+    title = result.strip().strip('"').strip("'")
+    return title or "Untitled Meeting"
+
+
+def check_ollama(model: str | None = None) -> bool:
     """Return True if Ollama is running and the requested model is available."""
+    resolved = _current_model(model)
     try:
         response = _ollama().list()
         # SDK >=0.3: ListResponse with .models (list of Model objects, .model attr)
@@ -160,6 +278,6 @@ def check_ollama(model: str = DEFAULT_MODEL) -> bool:
             ]
         else:
             names = [m.get("model", m.get("name", "")) for m in response.get("models", [])]
-        return any(model in n for n in names)
+        return any(resolved in n for n in names)
     except Exception:
         return False

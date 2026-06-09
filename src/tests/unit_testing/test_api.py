@@ -5,10 +5,22 @@ Heavy dependencies (WhisperModel, AudioCapture, Ollama) are mocked so
 these tests run without GPU, audio hardware, or a running Ollama server.
 """
 
+import io
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def reset_runtime_settings():
+    """Restore runtime_settings to defaults after each test."""
+    import meeting_copilot.runtime_settings as rs
+
+    original = rs.get()
+    yield
+    rs._state.update(original)
 
 
 @pytest.fixture()
@@ -95,9 +107,32 @@ def test_list_meetings(client):
     client.post("/meeting/start", json={"title": "Beta"})
     r = client.get("/meeting/list")
     assert r.status_code == 200
-    titles = [s["title"] for s in r.json()["sessions"]]
+    data = r.json()
+    titles = [s["title"] for s in data["sessions"]]
     assert "Alpha" in titles
     assert "Beta" in titles
+    assert "total" in data
+
+
+def test_list_meetings_pagination(client):
+    for i in range(5):
+        client.post("/meeting/start", json={"title": f"Meeting {i}"})
+
+    r1 = client.get("/meeting/list?limit=3&offset=0")
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert len(d1["sessions"]) == 3
+    assert d1["total"] == 5
+
+    r2 = client.get("/meeting/list?limit=3&offset=3")
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert len(d2["sessions"]) == 2
+
+    # No overlap between pages
+    ids1 = {s["id"] for s in d1["sessions"]}
+    ids2 = {s["id"] for s in d2["sessions"]}
+    assert not ids1 & ids2
 
 
 # ── PTT ───────────────────────────────────────────────────────────────────────
@@ -157,6 +192,22 @@ def test_export_txt(client):
     assert r.headers["content-disposition"].endswith('.txt"')
 
 
+def test_export_txt_includes_qa_and_action_items(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "Rich Export"}).json()["session_id"]
+    db_module.save_utterance(sid, "We discussed the roadmap.", 0.0, 2.0)
+    db_module.save_answer(sid, "What was decided?", "Q3 launch confirmed.")
+    db_module.save_action_items(sid, "- [ ] Write spec (owner: Alice)")
+    client.post(f"/meeting/{sid}/end")
+
+    r = client.get(f"/meeting/{sid}/transcript/export?format=txt")
+    assert r.status_code == 200
+    assert "Q3 launch confirmed." in r.text
+    assert "Write spec" in r.text
+    assert "Q: What was decided?" in r.text
+
+
 def test_export_md(client):
     import meeting_copilot.storage.db as db_module
 
@@ -170,8 +221,76 @@ def test_export_md(client):
     assert "[00:05]" in r.text
 
 
+def test_export_md_includes_qa_and_action_items(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "MD Rich"}).json()["session_id"]
+    db_module.save_utterance(sid, "Planning session.", 0.0, 2.0)
+    db_module.save_answer(sid, "Budget?", "Approved at $50k.")
+    db_module.save_action_items(sid, "- [ ] Hire engineer (owner: Bob)")
+    client.post(f"/meeting/{sid}/end")
+
+    r = client.get(f"/meeting/{sid}/transcript/export?format=md")
+    assert r.status_code == 200
+    assert "## Q&A" in r.text
+    assert "Approved at $50k." in r.text
+    assert "## Action Items" in r.text
+    assert "Hire engineer" in r.text
+
+
+def test_export_json(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "JSON Export"}).json()["session_id"]
+    db_module.save_utterance(sid, "Hello JSON world", 0.0, 2.0)
+    db_module.save_answer(sid, "Q?", "A.")
+    client.post(f"/meeting/{sid}/end")
+
+    r = client.get(f"/meeting/{sid}/transcript/export?format=json")
+    assert r.status_code == 200
+    assert "application/json" in r.headers["content-type"]
+    data = r.json()
+    assert data["session"]["title"] == "JSON Export"
+    assert len(data["utterances"]) == 1
+    assert data["utterances"][0]["text"] == "Hello JSON world"
+    assert len(data["answers"]) == 1
+
+
 def test_export_unknown_session(client):
     r = client.get("/meeting/00000000-0000-0000-0000-000000000000/transcript/export")
+    assert r.status_code == 404
+
+
+# ── Notes ─────────────────────────────────────────────────────────────────────
+
+
+def test_get_notes_empty(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    r = client.get(f"/meeting/{sid}/notes")
+    assert r.status_code == 200
+    assert r.json()["notes"] == ""
+
+
+def test_patch_notes_and_retrieve(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    r = client.patch(f"/meeting/{sid}/notes", json={"notes": "Follow up with Bob"})
+    assert r.status_code == 200
+    assert r.json()["notes"] == "Follow up with Bob"
+
+    r2 = client.get(f"/meeting/{sid}/notes")
+    assert r2.json()["notes"] == "Follow up with Bob"
+
+
+def test_notes_unknown_session_returns_404(client):
+    r = client.get("/meeting/00000000-0000-0000-0000-000000000000/notes")
+    assert r.status_code == 404
+
+
+def test_patch_notes_unknown_session_returns_404(client):
+    r = client.patch(
+        "/meeting/00000000-0000-0000-0000-000000000000/notes",
+        json={"notes": "x"},
+    )
     assert r.status_code == 404
 
 
@@ -263,7 +382,9 @@ def test_rename_meeting(client):
 
     import meeting_copilot.storage.db as db_module
 
-    assert db_module.get_session(sid)["title"] == "New Name"
+    session = db_module.get_session(sid)
+    assert session is not None
+    assert session["title"] == "New Name"
 
 
 def test_rename_empty_title_returns_422(client):
@@ -315,3 +436,886 @@ def test_delete_also_removes_answers(client):
 
     client.delete(f"/meeting/{sid}")
     assert db_module.get_answers(sid) == []
+
+
+# ── Action Items ──────────────────────────────────────────────────────────────
+
+
+def test_action_items_returns_action_items_id(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+
+    with patch("meeting_copilot.api.main._stream_action_items_to_ws"):
+        r = client.post(f"/meeting/{sid}/action-items")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cached"] is False
+    assert "action_items_id" in data
+
+
+def test_action_items_returns_cached(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_action_items(sid, "- [ ] Follow up on budget (owner: Alice)")
+
+    r = client.post(f"/meeting/{sid}/action-items")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cached"] is True
+    assert "budget" in data["text"]
+
+
+def test_action_items_regenerate_ignores_cache(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_action_items(sid, "Old action items")
+
+    with patch("meeting_copilot.api.main._stream_action_items_to_ws"):
+        r = client.post(f"/meeting/{sid}/action-items/regenerate")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cached"] is False
+    assert "action_items_id" in data
+
+
+def test_action_items_unknown_session_returns_404(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/action-items")
+    assert r.status_code == 404
+
+
+# ── Transcript Search ─────────────────────────────────────────────────────────
+
+
+def test_search_transcript_returns_matches(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_utterance(sid, "The budget is fifty thousand.", 0.0, 2.0)
+    db_module.save_utterance(sid, "We need to hire two engineers.", 3.0, 5.0)
+
+    r = client.get(f"/meeting/{sid}/transcript/search?q=budget")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["utterances"]) == 1
+    assert "budget" in data["utterances"][0]["text"].lower()
+
+
+def test_search_transcript_case_insensitive(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_utterance(sid, "Alice will follow up.", 0.0, 2.0)
+
+    r = client.get(f"/meeting/{sid}/transcript/search?q=ALICE")
+    assert r.status_code == 200
+    assert len(r.json()["utterances"]) == 1
+
+
+def test_search_transcript_no_matches(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_utterance(sid, "Nothing relevant here.", 0.0, 2.0)
+
+    r = client.get(f"/meeting/{sid}/transcript/search?q=xylophone")
+    assert r.status_code == 200
+    assert r.json()["utterances"] == []
+
+
+def test_search_transcript_unknown_session_returns_404(client):
+    r = client.get("/meeting/00000000-0000-0000-0000-000000000000/transcript/search?q=test")
+    assert r.status_code == 404
+
+
+# ── Cross-session search ──────────────────────────────────────────────────────
+
+
+def test_search_meetings_returns_matching_sessions(client):
+    import meeting_copilot.storage.db as db_module
+
+    s1 = client.post("/meeting/start", json={"title": "Sprint Review"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Daily Standup"}).json()["session_id"]
+    db_module.save_utterance(s1, "We shipped the new feature.", 0.0, 2.0)
+    db_module.save_utterance(s2, "Bob is blocked on the feature branch.", 0.0, 2.0)
+    db_module.save_utterance(s2, "Nothing else to report.", 3.0, 4.0)
+
+    r = client.get("/meeting/search?q=feature")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["query"] == "feature"
+    session_ids = {s["session_id"] for s in data["sessions"]}
+    assert s1 in session_ids
+    assert s2 in session_ids
+
+    # s2 has 1 matching utterance (only "feature branch" line matches)
+    s2_result = next(s for s in data["sessions"] if s["session_id"] == s2)
+    assert len(s2_result["utterances"]) == 1
+
+
+def test_search_meetings_no_results(client):
+    r = client.get("/meeting/search?q=xylophone")
+    assert r.status_code == 200
+    assert r.json()["sessions"] == []
+
+
+def test_search_meetings_missing_query_returns_422(client):
+    r = client.get("/meeting/search")
+    assert r.status_code == 422
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+
+def test_get_settings_returns_defaults(client):
+    r = client.get("/settings")
+    assert r.status_code == 200
+    data = r.json()
+    assert "ollama_model" in data
+    assert "whisper_language" in data
+    assert "whisper_model_size" in data
+
+
+def test_patch_settings_ollama_model(client):
+    r = client.patch("/settings", json={"ollama_model": "mistral"})
+    assert r.status_code == 200
+    assert r.json()["ollama_model"] == "mistral"
+
+    # Verify GET reflects the change
+    assert client.get("/settings").json()["ollama_model"] == "mistral"
+
+
+def test_patch_settings_whisper_language(client):
+    r = client.patch("/settings", json={"whisper_language": "pt"})
+    assert r.status_code == 200
+    assert r.json()["whisper_language"] == "pt"
+
+
+def test_patch_settings_empty_body_is_noop(client):
+    before = client.get("/settings").json()
+    r = client.patch("/settings", json={})
+    assert r.status_code == 200
+    assert r.json() == before
+
+
+def test_patch_settings_readonly_key_returns_422(client):
+    r = client.patch("/settings", json={"whisper_model_size": "medium"})
+    assert r.status_code == 422
+
+
+def test_list_ollama_models_returns_list(client):
+    """When Ollama is unavailable (no server in CI), endpoint returns empty list gracefully."""
+    r = client.get("/settings/models")
+    assert r.status_code == 200
+    assert isinstance(r.json()["models"], list)
+
+
+# ── Meeting stats ─────────────────────────────────────────────────────────────
+
+
+def test_stats_empty_session(client):
+    sid = client.post("/meeting/start", json={"title": "Stats Test"}).json()["session_id"]
+    r = client.get(f"/meeting/{sid}/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["utterance_count"] == 0
+    assert data["word_count"] == 0
+    assert data["answer_count"] == 0
+    assert data["duration_seconds"] is None  # session not yet ended
+
+
+def test_stats_counts_utterances_and_words(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "Count Test"}).json()["session_id"]
+    db_module.save_utterance(sid, "Hello world", 0.0, 2.0)  # 2 words
+    db_module.save_utterance(sid, "One two three", 2.0, 4.0)  # 3 words
+    db_module.save_answer(sid, "Q?", "A.")
+
+    r = client.get(f"/meeting/{sid}/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["utterance_count"] == 2
+    assert data["word_count"] == 5
+    assert data["answer_count"] == 1
+
+
+def test_stats_includes_duration_when_ended(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "Duration Test"}).json()["session_id"]
+    client.post(f"/meeting/{sid}/end")
+    db_module.save_utterance(sid, "Done", 0.0, 1.0)
+
+    r = client.get(f"/meeting/{sid}/stats")
+    assert r.status_code == 200
+    assert r.json()["duration_seconds"] is not None
+    assert r.json()["duration_seconds"] >= 0
+
+
+def test_stats_unknown_session_returns_404(client):
+    r = client.get("/meeting/00000000-0000-0000-0000-000000000000/stats")
+    assert r.status_code == 404
+
+
+# ── Tags ──────────────────────────────────────────────────────────────────────
+
+
+def test_add_tag_to_meeting(client):
+    sid = client.post("/meeting/start", json={"title": "Tag Test"}).json()["session_id"]
+    r = client.post(f"/meeting/{sid}/tags", json={"tag": "Engineering"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["tag"] == "engineering"  # lowercased
+    assert "engineering" in data["tags"]
+
+
+def test_add_tag_idempotent_via_api(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    client.post(f"/meeting/{sid}/tags", json={"tag": "dup"})
+    client.post(f"/meeting/{sid}/tags", json={"tag": "dup"})
+    r = client.post(f"/meeting/{sid}/tags", json={"tag": "dup"})
+    assert r.json()["tags"].count("dup") == 1
+
+
+def test_remove_tag_from_meeting(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    client.post(f"/meeting/{sid}/tags", json={"tag": "remove-me"})
+    r = client.delete(f"/meeting/{sid}/tags/remove-me")
+    assert r.status_code == 200
+    assert "remove-me" not in r.json()["tags"]
+
+
+def test_add_tag_to_unknown_session_returns_404(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/tags", json={"tag": "x"})
+    assert r.status_code == 404
+
+
+def test_remove_tag_from_unknown_session_returns_404(client):
+    r = client.delete("/meeting/00000000-0000-0000-0000-000000000000/tags/x")
+    assert r.status_code == 404
+
+
+def test_add_empty_tag_returns_422(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    r = client.post(f"/meeting/{sid}/tags", json={"tag": "  "})
+    assert r.status_code == 422
+
+
+def test_get_all_tags_empty(client):
+    r = client.get("/meeting/tags")
+    assert r.status_code == 200
+    assert isinstance(r.json()["tags"], list)
+
+
+def test_get_all_tags_returns_added_tags(client):
+    s1 = client.post("/meeting/start", json={}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "alpha"})
+    client.post(f"/meeting/{s2}/tags", json={"tag": "beta"})
+    r = client.get("/meeting/tags")
+    tags = r.json()["tags"]
+    assert "alpha" in tags and "beta" in tags
+
+
+def test_list_meetings_filtered_by_tag(client):
+    s1 = client.post("/meeting/start", json={"title": "Session A"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Session B"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "finance"})
+
+    r = client.get("/meeting/list?tag=finance")
+    assert r.status_code == 200
+    data = r.json()
+    ids = {s["id"] for s in data["sessions"]}
+    assert s1 in ids
+    assert s2 not in ids
+    assert data["total"] == 1
+
+
+def test_session_includes_tags_in_list(client):
+    sid = client.post("/meeting/start", json={"title": "With Tags"}).json()["session_id"]
+    client.post(f"/meeting/{sid}/tags", json={"tag": "product"})
+    r = client.get("/meeting/list")
+    sessions = r.json()["sessions"]
+    match = next((s for s in sessions if s["id"] == sid), None)
+    assert match is not None
+    assert "product" in match["tags"]
+
+
+# ── Auto-title ────────────────────────────────────────────────────────────────
+
+
+def test_auto_generate_title_endpoint(client):
+    """Endpoint returns 200 and queues generation (fire-and-forget, not tested here)."""
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    with patch("meeting_copilot.api.main.llm_generate_title", return_value="Sprint Planning Q3"):
+        with (
+            patch("meeting_copilot.api.main.loop")
+            if False
+            else __import__("contextlib").nullcontext()
+        ):
+            r = client.post(f"/meeting/{sid}/title/generate")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_auto_generate_title_unknown_session(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/title/generate")
+    assert r.status_code == 404
+
+
+# ── Insights ──────────────────────────────────────────────────────────────────
+
+
+def test_get_insights(client):
+    import meeting_copilot.storage.db as db_module
+
+    # Create a couple of meetings with data
+    s1 = client.post("/meeting/start", json={"title": "Standup"}).json()["session_id"]
+    db_module.save_utterance(s1, "Hello world", 0.0, 2.0)
+    db_module.save_answer(s1, "Q?", "A.")
+
+    r = client.get("/insights")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total_sessions"] >= 1
+    assert data["total_words"] >= 2
+    assert data["total_answers"] >= 1
+    assert "activity_by_day_of_week" in data
+    assert "weekly_activity" in data
+    assert "top_tags" in data
+
+
+def test_get_recent_insights(client):
+    client.post("/meeting/start", json={"title": "Recent"})
+    r = client.get("/insights/recent?days=7")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["days"] == 7
+    assert data["sessions"] >= 1
+
+
+def test_get_recent_insights_custom_days(client):
+    r = client.get("/insights/recent?days=30")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["days"] == 30
+
+
+def test_get_recent_insights_invalid_days(client):
+    r = client.get("/insights/recent?days=0")
+    assert r.status_code == 422  # validation error
+
+    r = client.get("/insights/recent?days=400")
+    assert r.status_code == 422  # exceeds max
+
+
+# ── Stars ─────────────────────────────────────────────────────────────────────
+
+
+def test_star_meeting(client):
+    sid = client.post("/meeting/start", json={"title": "Important"}).json()["session_id"]
+    r = client.post(f"/meeting/{sid}/star")
+    assert r.status_code == 200
+    assert r.json()["starred"] is True
+
+
+def test_unstar_meeting(client):
+    sid = client.post("/meeting/start", json={"title": "Unimportant"}).json()["session_id"]
+    client.post(f"/meeting/{sid}/star")
+    r = client.delete(f"/meeting/{sid}/star")
+    assert r.status_code == 200
+    assert r.json()["starred"] is False
+
+
+def test_get_star_status(client):
+    sid = client.post("/meeting/start", json={"title": "Test"}).json()["session_id"]
+    r = client.get(f"/meeting/{sid}/star")
+    assert r.status_code == 200
+    assert r.json()["starred"] is False
+
+    client.post(f"/meeting/{sid}/star")
+    r = client.get(f"/meeting/{sid}/star")
+    assert r.json()["starred"] is True
+
+
+def test_list_starred_meetings(client):
+    s1 = client.post("/meeting/start", json={"title": "Starred 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Not starred"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/star")
+
+    r = client.get("/meeting/starred/list")
+    assert r.status_code == 200
+    data = r.json()
+    ids = {s["id"] for s in data["sessions"]}
+    assert s1 in ids
+    assert s2 not in ids
+    assert data["total"] >= 1
+
+
+def test_star_unknown_session(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/star")
+    assert r.status_code == 404
+
+
+# ── Bulk Export ────────────────────────────────────────────────────────────────
+
+
+def test_bulk_export_txt(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1, s2], "format": "txt"})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert len(z.namelist()) == 2
+        names = z.namelist()
+        assert any("meeting-1" in n.lower() for n in names)
+        assert any("meeting-2" in n.lower() for n in names)
+
+
+def test_bulk_export_md(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1, s2], "format": "md"})
+    assert r.status_code == 200
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert len(z.namelist()) == 2
+        for name in z.namelist():
+            assert name.endswith(".md")
+
+
+def test_bulk_export_json(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1], "format": "json"})
+    assert r.status_code == 200
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert len(z.namelist()) == 1
+        assert z.namelist()[0].endswith(".json")
+        content = z.read(z.namelist()[0]).decode()
+        data = json.loads(content)
+        assert "session" in data
+        assert "utterances" in data
+        assert "answers" in data
+
+
+def test_bulk_export_empty_list(client):
+    r = client.post("/meeting/bulk-export", json={"session_ids": [], "format": "txt"})
+    assert r.status_code == 400
+    assert "cannot be empty" in r.json()["detail"]
+
+
+def test_bulk_export_invalid_format(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1], "format": "pdf"})
+    assert r.status_code == 400
+    assert "must be txt, md, or json" in r.json()["detail"]
+
+
+def test_bulk_export_skips_missing_sessions(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    unknown_id = "00000000-0000-0000-0000-000000000000"
+
+    r = client.post(
+        "/meeting/bulk-export",
+        json={"session_ids": [s1, unknown_id], "format": "txt"},
+    )
+    assert r.status_code == 200
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert len(z.namelist()) == 1  # Only the existing session
+
+
+def test_bulk_export_default_format(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1]})
+    assert r.status_code == 200
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert z.namelist()[0].endswith(".txt")
+
+
+# ── Bulk Delete ────────────────────────────────────────────────────────────────
+
+
+def test_bulk_delete_meetings(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-delete", json={"session_ids": [s1, s2]})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert r.json()["deleted_count"] == 2
+
+    # Verify they're deleted
+    assert client.get(f"/meeting/{s1}/stats").status_code == 404
+    assert client.get(f"/meeting/{s2}/stats").status_code == 404
+
+
+def test_bulk_delete_empty_list(client):
+    r = client.post("/meeting/bulk-delete", json={"session_ids": []})
+    assert r.status_code == 400
+    assert "cannot be empty" in r.json()["detail"]
+
+
+def test_bulk_delete_skips_missing_sessions(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    unknown_id = "00000000-0000-0000-0000-000000000000"
+
+    r = client.post(
+        "/meeting/bulk-delete",
+        json={"session_ids": [s1, unknown_id]},
+    )
+    assert r.status_code == 200
+    assert r.json()["deleted_count"] == 2  # Counts both attempts
+
+    # Verify existing session is deleted
+    assert client.get(f"/meeting/{s1}/stats").status_code == 404
+
+
+def test_bulk_delete_active_session(client):
+    s1 = client.post("/meeting/start", json={"title": "Active Meeting"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-delete", json={"session_ids": [s1]})
+    assert r.status_code == 200
+
+    # Verify it's deleted
+    assert client.get(f"/meeting/{s1}/stats").status_code == 404
+
+
+# ── Bulk Tag ───────────────────────────────────────────────────────────────────
+
+
+def test_bulk_add_tag(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-tag", json={"session_ids": [s1, s2], "tag": "important"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert r.json()["tagged_count"] == 2
+
+    # Verify tags were added
+    tags1 = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "important" in tags1
+
+
+def test_bulk_add_tag_normalizes_case(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+
+    client.post("/meeting/bulk-tag", json={"session_ids": [s1], "tag": "IMPORTANT"})
+
+    tags = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "important" in tags
+    assert "IMPORTANT" not in tags
+
+
+def test_bulk_remove_tag(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    # Add tags first
+    client.post("/meeting/bulk-tag", json={"session_ids": [s1, s2], "tag": "review"})
+
+    # Remove tags
+    r = client.post("/meeting/bulk-tag/remove", json={"session_ids": [s1, s2], "tag": "review"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert r.json()["untagged_count"] == 2
+
+    # Verify tags were removed
+    tags1 = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "review" not in tags1
+
+
+def test_bulk_tag_empty_list(client):
+    r = client.post("/meeting/bulk-tag", json={"session_ids": [], "tag": "test"})
+    assert r.status_code == 400
+    assert "cannot be empty" in r.json()["detail"]
+
+
+def test_bulk_tag_empty_tag(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    r = client.post("/meeting/bulk-tag", json={"session_ids": [s1], "tag": ""})
+    assert r.status_code == 422
+    assert "cannot be empty" in r.json()["detail"]
+
+
+def test_bulk_tag_skips_missing_sessions(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    unknown_id = "00000000-0000-0000-0000-000000000000"
+
+    r = client.post(
+        "/meeting/bulk-tag",
+        json={"session_ids": [s1, unknown_id], "tag": "test"},
+    )
+    assert r.status_code == 200
+    assert r.json()["tagged_count"] == 1  # Only counts existing sessions
+
+    # Verify tag was added to existing session
+    tags = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "test" in tags
+
+
+def test_bulk_remove_tag_skips_missing_sessions(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    unknown_id = "00000000-0000-0000-0000-000000000000"
+
+    # Add tag first
+    client.post("/meeting/bulk-tag", json={"session_ids": [s1], "tag": "test"})
+
+    # Remove from mix of existing and missing sessions
+    r = client.post(
+        "/meeting/bulk-tag/remove",
+        json={"session_ids": [s1, unknown_id], "tag": "test"},
+    )
+    assert r.status_code == 200
+    assert r.json()["untagged_count"] == 1
+
+    # Verify tag was removed
+    tags = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "test" not in tags
+
+
+# ── Clone ──────────────────────────────────────────────────────────────────────
+
+
+def test_clone_meeting_default_title(client):
+    s1 = client.post("/meeting/start", json={"title": "Original Meeting"}).json()["session_id"]
+
+    r = client.post(f"/meeting/{s1}/clone")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert r.json()["original_session_id"] == s1
+    new_id = r.json()["new_session_id"]
+    assert new_id != s1
+
+    # Verify new session has correct title
+    assert r.json()["new_session"]["title"] == "Original Meeting (copy)"
+
+
+def test_clone_meeting_custom_title(client):
+    s1 = client.post("/meeting/start", json={"title": "Original"}).json()["session_id"]
+
+    r = client.post(f"/meeting/{s1}/clone", json={"title": "Custom Title"})
+    assert r.status_code == 200
+    new_id = r.json()["new_session_id"]
+
+    # Verify new session has custom title
+    assert r.json()["new_session"]["title"] == "Custom Title"
+
+
+def test_clone_meeting_copies_notes(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting"}).json()["session_id"]
+    client.patch(f"/meeting/{s1}/notes", json={"notes": "Important notes"})
+
+    r = client.post(f"/meeting/{s1}/clone")
+    new_id = r.json()["new_session_id"]
+
+    # Verify notes were copied
+    notes = client.get(f"/meeting/{new_id}/notes").json()
+    assert notes["notes"] == "Important notes"
+
+
+def test_clone_meeting_copies_tags(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "important"})
+    client.post(f"/meeting/{s1}/tags", json={"tag": "review"})
+
+    r = client.post(f"/meeting/{s1}/clone")
+    new_id = r.json()["new_session_id"]
+
+    # Verify tags were copied
+    tags = client.get(f"/meeting/{new_id}/tags").json()["tags"]
+    assert "important" in tags
+    assert "review" in tags
+
+
+def test_clone_unknown_session(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/clone")
+    assert r.status_code == 404
+    assert "Session not found" in r.json()["detail"]
+
+
+def test_clone_meeting_independent_session(client):
+    s1 = client.post("/meeting/start", json={"title": "Original"}).json()["session_id"]
+    client.patch(f"/meeting/{s1}/notes", json={"notes": "Original notes"})
+
+    new_id = client.post(f"/meeting/{s1}/clone").json()["new_session_id"]
+
+    # Modify original session
+    client.patch(f"/meeting/{s1}/notes", json={"notes": "Modified notes"})
+
+    # Verify cloned session is independent
+    new_notes = client.get(f"/meeting/{new_id}/notes").json()["notes"]
+    assert new_notes == "Original notes"
+
+
+# ── Export ─────────────────────────────────────────────────────────────────────
+
+
+def test_export_meeting_stats_csv(client):
+    import csv as csv_module
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    # Add some tags
+    client.post(f"/meeting/{s1}/tags", json={"tag": "important"})
+    client.post(f"/meeting/{s2}/tags", json={"tag": "review"})
+
+    r = client.get("/meeting/export/stats")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "text/csv; charset=utf-8"
+
+    # Parse CSV
+    lines = r.text.strip().split("\n")
+    reader = csv_module.DictReader(lines)
+    rows = list(reader)
+
+    assert len(rows) >= 2
+    titles = {row["title"] for row in rows}
+    assert "Meeting 1" in titles
+    assert "Meeting 2" in titles
+
+
+def test_export_stats_csv_includes_tags(client):
+    import csv as csv_module
+
+    s1 = client.post("/meeting/start", json={"title": "Tagged Meeting"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "important"})
+    client.post(f"/meeting/{s1}/tags", json={"tag": "urgent"})
+
+    r = client.get("/meeting/export/stats")
+    lines = r.text.strip().split("\n")
+    reader = csv_module.DictReader(lines)
+    rows = list(reader)
+
+    meeting_row = next((row for row in rows if row["title"] == "Tagged Meeting"), None)
+    assert meeting_row is not None
+    assert "important" in meeting_row["tags"]
+    assert "urgent" in meeting_row["tags"]
+    assert ";" in meeting_row["tags"]  # Tags are separated by semicolon
+
+
+def test_export_stats_csv_includes_starred(client):
+    import csv as csv_module
+
+    s1 = client.post("/meeting/start", json={"title": "Starred Meeting"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Not Starred"}).json()["session_id"]
+
+    client.post(f"/meeting/{s1}/star")
+
+    r = client.get("/meeting/export/stats")
+    lines = r.text.strip().split("\n")
+    reader = csv_module.DictReader(lines)
+    rows = list(reader)
+
+    starred_row = next((row for row in rows if row["title"] == "Starred Meeting"), None)
+    not_starred_row = next((row for row in rows if row["title"] == "Not Starred"), None)
+
+    assert starred_row is not None
+    assert not_starred_row is not None
+    assert starred_row["is_starred"] == "1"
+    assert not_starred_row["is_starred"] == "0"
+
+
+def test_export_stats_csv_has_headers(client):
+    r = client.get("/meeting/export/stats")
+    lines = r.text.strip().split("\n")
+    headers = lines[0].split(",")
+
+    assert "session_id" in headers
+    assert "title" in headers
+    assert "duration_seconds" in headers
+    assert "utterance_count" in headers
+    assert "word_count" in headers
+    assert "answer_count" in headers
+    assert "is_starred" in headers
+    assert "tags" in headers
+
+
+# ── Date Filtering ────────────────────────────────────────────────────────────
+
+
+def test_filter_meetings_by_date(client):
+    from datetime import datetime, timedelta
+
+    today = datetime.now().date().isoformat()
+    yesterday = (datetime.now() - timedelta(days=1)).date().isoformat()
+
+    client.post("/meeting/start", json={"title": "Today Meeting"})
+    r = client.get(f"/meeting/filter/date?start_date={today}")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] >= 1
+    titles = {s["title"] for s in data["sessions"]}
+    assert "Today Meeting" in titles
+
+
+def test_filter_meetings_by_date_range(client):
+    from datetime import datetime, timedelta
+
+    today = datetime.now().date().isoformat()
+    tomorrow = (datetime.now() + timedelta(days=1)).date().isoformat()
+    far_future = (datetime.now() + timedelta(days=30)).date().isoformat()
+
+    client.post("/meeting/start", json={"title": "Meeting Today"})
+
+    # Should find the meeting within range
+    r = client.get(f"/meeting/filter/date?start_date={today}&end_date={tomorrow}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] >= 1
+
+    # Should not find the meeting outside range
+    r = client.get(f"/meeting/filter/date?start_date={far_future}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 0
+
+
+def test_filter_meetings_invalid_date_format(client):
+    r = client.get("/meeting/filter/date?start_date=invalid-date")
+    assert r.status_code == 422
+    assert "Invalid date format" in r.json()["detail"]
+
+
+def test_filter_meetings_date_missing_start(client):
+    r = client.get("/meeting/filter/date")
+    assert r.status_code == 422
+
+
+def test_filter_meetings_returns_tags(client):
+    from datetime import datetime
+
+    today = datetime.now().date().isoformat()
+    s1 = client.post("/meeting/start", json={"title": "Tagged Meeting"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "important"})
+
+    r = client.get(f"/meeting/filter/date?start_date={today}")
+    assert r.status_code == 200
+    data = r.json()
+    tagged_session = next((s for s in data["sessions"] if s["title"] == "Tagged Meeting"), None)
+    assert tagged_session is not None
+    assert "important" in tagged_session["tags"]

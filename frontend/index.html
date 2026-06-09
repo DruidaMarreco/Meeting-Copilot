@@ -267,6 +267,126 @@
     .btn-summarize:hover { background: #20264a; border-color: var(--accent); }
     .btn-summarize:disabled { opacity: 0.45; cursor: not-allowed; }
 
+    /* ── Action items ── */
+    --action-bg: #1a2218;
+    --action-border: #2a4828;
+    .action-items-card {
+      background: var(--answer-bg); border: 1px solid #2a4828;
+      border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;
+      animation: fadeIn 0.2s ease;
+    }
+    .action-items-card .ai-header {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--green); margin-bottom: 8px;
+    }
+    .action-items-card .ai-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+    .action-items-card .ai-actions { margin-top: 10px; display: flex; gap: 8px; }
+    .btn-action-items {
+      font-size: 12px; padding: 5px 12px; background: #1a2218;
+      border: 1px solid #2a4828; color: var(--green);
+      border-radius: 5px; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-action-items:hover { background: #1e2e1c; border-color: var(--green); }
+    .btn-action-items:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Search ── */
+    .search-bar {
+      display: flex; gap: 6px; margin-bottom: 10px; align-items: center;
+    }
+    .search-bar input {
+      flex: 1; min-width: 0; max-width: none;
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 6px 10px; font-size: 12px; outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-bar input:focus { border-color: var(--accent); }
+    .search-clear {
+      background: none; border: none; color: var(--text-muted); cursor: pointer;
+      font-size: 14px; padding: 2px 6px; border-radius: 4px;
+      transition: color 0.15s;
+    }
+    .search-clear:hover { color: var(--text); }
+    .utterance.hidden { display: none; }
+    .search-no-results {
+      font-size: 12px; color: var(--text-muted); padding: 8px 0;
+    }
+
+    /* ── Copy button ── */
+    .copy-btn {
+      background: none; border: 1px solid var(--border); color: var(--text-muted);
+      border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+    /* ── Settings panel ── */
+    .settings-btn {
+      background: none; border: none; color: var(--text-muted); cursor: pointer;
+      font-size: 18px; padding: 4px 6px; border-radius: 5px; line-height: 1;
+      transition: color 0.15s;
+    }
+    .settings-btn:hover { color: var(--text); }
+    .settings-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .settings-overlay.open { display: flex; }
+    .settings-panel {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 24px 28px; width: 360px; display: flex; flex-direction: column; gap: 16px;
+    }
+    .settings-panel h2 { font-size: 15px; font-weight: 600; margin: 0; }
+    .settings-panel label { font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+    .settings-panel input[type="text"] { width: 100%; max-width: none; }
+    .settings-panel .s-row { display: flex; flex-direction: column; gap: 4px; }
+    .settings-panel .s-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+    .settings-panel .s-save {
+      background: var(--accent); color: white; border: none;
+      border-radius: 6px; padding: 7px 18px; font-size: 13px; cursor: pointer;
+    }
+    .settings-panel .s-save:hover { background: var(--accent-hover); }
+    .settings-panel .s-cancel {
+      background: none; border: 1px solid var(--border); color: var(--text-muted);
+      border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+    }
+    .settings-panel .s-cancel:hover { border-color: var(--text-muted); }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px;
+      font-size: 12px; color: var(--text-muted);
+    }
+    .stats-bar span { white-space: nowrap; }
+    .stats-bar strong { color: var(--text); }
+
+    /* ── Keyboard shortcuts modal ── */
+    .kbd-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .kbd-overlay.open { display: flex; }
+    .kbd-panel {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 24px 28px; width: 340px;
+    }
+    .kbd-panel h2 { font-size: 15px; font-weight: 600; margin: 0 0 14px; }
+    .kbd-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    .kbd-row:last-child { border-bottom: none; }
+    .kbd-key {
+      font-family: monospace; background: var(--border); border-radius: 4px;
+      padding: 2px 8px; font-size: 12px; color: var(--text);
+    }
+
+    /* ── Notes ── */
+    textarea { outline: none; transition: border-color 0.15s; }
+    textarea:focus { border-color: var(--accent) !important; }
+
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     @keyframes pulse  { 0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.4); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
     @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
@@ -285,14 +405,44 @@
       <span class="dot" id="rec-dot"></span>
       <span id="rec-label">Not recording</span>
     </div>
+    <button class="settings-btn" id="btn-settings" title="Settings">⚙</button>
   </div>
 </header>
+
+<div class="settings-overlay" id="settings-overlay">
+  <div class="settings-panel">
+    <h2>⚙ Settings</h2>
+    <div class="s-row">
+      <label for="cfg-ollama-model">Ollama model</label>
+      <input type="text" id="cfg-ollama-model" placeholder="e.g. llama3, mistral" maxlength="80" list="ollama-models-list" />
+      <datalist id="ollama-models-list"></datalist>
+    </div>
+    <div class="s-row">
+      <label for="cfg-whisper-lang">Whisper language (ISO code)</label>
+      <input type="text" id="cfg-whisper-lang" placeholder="e.g. en, pt, fr" maxlength="10" />
+    </div>
+    <div class="s-actions">
+      <button class="s-cancel" id="settings-cancel">Cancel</button>
+      <button class="s-save" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
 
 <div class="controls">
   <input type="text" id="meeting-title" placeholder="Meeting title (optional)" maxlength="80" />
   <button id="btn-start">▶ Start</button>
   <button id="btn-end" disabled>■ End</button>
   <span id="session-info"></span>
+  <input type="text" id="global-search" placeholder="🔍 Search all meetings…" maxlength="120" style="margin-left:auto;" />
+</div>
+
+<div class="kbd-overlay" id="kbd-overlay">
+  <div class="kbd-panel">
+    <h2>⌨ Keyboard Shortcuts</h2>
+    <div class="kbd-row"><span>Push-to-talk</span><span class="kbd-key">Space</span></div>
+    <div class="kbd-row"><span>Show shortcuts</span><span class="kbd-key">?</span></div>
+    <div class="kbd-row"><span>Close modal</span><span class="kbd-key">Esc</span></div>
+  </div>
 </div>
 
 <div class="body">
@@ -309,6 +459,7 @@
       <button id="btn-ptt" disabled title="Hold to ask a question">🎤</button>
       <div class="ptt-hint">Hold to ask · Release to send · Space</div>
       <button id="btn-summarize" class="btn-summarize" disabled style="margin-top:4px;">📋 Summarize meeting</button>
+      <button id="btn-action-items" class="btn-action-items" disabled style="margin-top:2px;">✅ Extract action items</button>
     </div>
   </div>
 </div>
@@ -322,10 +473,11 @@
   const pendingAnswers = {};
   const pendingSummaries = {};
 
-  const btnStart      = document.getElementById("btn-start");
-  const btnEnd        = document.getElementById("btn-end");
-  const btnPtt        = document.getElementById("btn-ptt");
-  const btnSummarize  = document.getElementById("btn-summarize");
+  const btnStart       = document.getElementById("btn-start");
+  const btnEnd         = document.getElementById("btn-end");
+  const btnPtt         = document.getElementById("btn-ptt");
+  const btnSummarize   = document.getElementById("btn-summarize");
+  const btnActionItems = document.getElementById("btn-action-items");
   const recDot      = document.getElementById("rec-dot");
   const recLabel    = document.getElementById("rec-label");
   const ollamaDot   = document.getElementById("ollama-dot");
@@ -333,11 +485,85 @@
   const sessionInfo = document.getElementById("session-info");
   const transcript  = document.getElementById("transcript");
   const answers     = document.getElementById("answers");
-  const titleInput  = document.getElementById("meeting-title");
+  const titleInput    = document.getElementById("meeting-title");
+  const globalSearch  = document.getElementById("global-search");
+
+  const pendingActionItems = {};
 
   // ── Init ───────────────────────────────────────────────────────────────────
   checkHealth();
   loadPastSessions();
+
+  // ── Global search ──────────────────────────────────────────────────────────
+  let _searchTimer = null;
+  globalSearch.addEventListener("input", () => {
+    clearTimeout(_searchTimer);
+    const q = globalSearch.value.trim();
+    if (!q) { loadPastSessions(); return; }
+    _searchTimer = setTimeout(() => runGlobalSearch(q), 300);
+  });
+
+  async function runGlobalSearch(q) {
+    if (sessionId) return; // don't disrupt an active session
+    try {
+      const res = await fetch(`${API}/meeting/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      showSearchResults(data.sessions || [], q);
+    } catch {
+      showToast("Search failed");
+    }
+  }
+
+  function showSearchResults(sessions, q) {
+    transcript.innerHTML = "";
+
+    const header = document.createElement("div");
+    header.className = "history-header";
+    header.textContent = sessions.length
+      ? `Search results for "${q}"`
+      : `No results for "${q}"`;
+    transcript.appendChild(header);
+
+    if (!sessions.length) return;
+
+    sessions.forEach(s => {
+      const item = document.createElement("div");
+      item.className = "session-item";
+      const date = s.started_at
+        ? new Date(s.started_at.replace(" ", "T") + "Z").toLocaleString()
+        : "—";
+
+      const body = document.createElement("div");
+      body.className = "s-body";
+      const matchCount = s.utterances.length;
+      const preview = s.utterances.slice(0, 2).map(u => escHtml(u.text)).join(" … ");
+      body.innerHTML = `
+        <div class="s-title">${escHtml(s.title)}
+          <span class="s-badge ended">${matchCount} match${matchCount !== 1 ? "es" : ""}</span>
+        </div>
+        <div class="s-meta">${date}</div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:4px; font-style:italic;">${preview}</div>`;
+      body.addEventListener("click", () => loadSession(s.session_id, s.title));
+      item.appendChild(body);
+      transcript.appendChild(item);
+    });
+  }
+
+  // ── Keyboard shortcuts modal ──────────────────────────────────────────────
+  const kbdOverlay = document.getElementById("kbd-overlay");
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      kbdOverlay.classList.remove("open");
+      settingsOverlay.classList.remove("open");
+      return;
+    }
+    if (e.key === "?" && document.activeElement !== titleInput && document.activeElement !== globalSearch) {
+      kbdOverlay.classList.toggle("open");
+    }
+  });
+  kbdOverlay.addEventListener("click", (e) => {
+    if (e.target === kbdOverlay) kbdOverlay.classList.remove("open");
+  });
 
   // ── Health / Ollama status ─────────────────────────────────────────────────
   async function checkHealth() {
@@ -358,12 +584,23 @@
   }
 
   // ── Session history ────────────────────────────────────────────────────────
-  async function loadPastSessions() {
+  const PAGE_SIZE = 20;
+  let _historyOffset = 0;
+  let _historyTotal = 0;
+  let _historySessions = [];
+  let _activeTagFilter = null;
+
+  async function loadPastSessions(reset = true) {
     if (sessionId) return;
+    if (reset) { _historyOffset = 0; _historySessions = []; }
     try {
-      const res = await fetch(`${API}/meeting/list`);
+      const tagParam = _activeTagFilter ? `&tag=${encodeURIComponent(_activeTagFilter)}` : "";
+      const res = await fetch(`${API}/meeting/list?limit=${PAGE_SIZE}&offset=${_historyOffset}${tagParam}`);
       const data = await res.json();
-      showSessionHistory(data.sessions || []);
+      _historyTotal = data.total ?? 0;
+      _historyOffset += (data.sessions || []).length;
+      _historySessions = [..._historySessions, ...(data.sessions || [])];
+      showSessionHistory(_historySessions, _historyTotal);
     } catch {
       showEmptyState();
     }
@@ -378,22 +615,51 @@
       </div>`;
   }
 
-  function showSessionHistory(sessions) {
+  function showSessionHistory(sessions, total = 0) {
     if (sessionId) return;
     transcript.innerHTML = "";
 
-    if (!sessions.length) { showEmptyState(); return; }
+    if (!sessions.length && !_activeTagFilter) { showEmptyState(); return; }
 
     const header = document.createElement("div");
     header.className = "history-header";
-    header.textContent = "Past meetings";
+    header.textContent = _activeTagFilter
+      ? `Meetings tagged "${_activeTagFilter}" (${total})`
+      : `Past meetings (${total})`;
     transcript.appendChild(header);
 
-    const sorted = [...sessions].sort((a, b) =>
-      (b.started_at || "").localeCompare(a.started_at || "")
-    );
+    // Tag filter bar
+    fetch(`${API}/meeting/tags`).then(r => r.json()).then(d => {
+      const tags = d.tags || [];
+      if (!tags.length) return;
+      const tagBar = document.createElement("div");
+      tagBar.style.cssText = "display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; padding:0 2px;";
+      const allChip = document.createElement("button");
+      allChip.textContent = "All";
+      allChip.style.cssText = `background:${!_activeTagFilter ? "var(--accent)" : "var(--surface)"}; color:${!_activeTagFilter ? "#fff" : "var(--text-muted)"}; border:1px solid var(--border); border-radius:12px; font-size:11px; padding:2px 9px; cursor:pointer;`;
+      allChip.addEventListener("click", () => { _activeTagFilter = null; loadPastSessions(true); });
+      tagBar.appendChild(allChip);
+      tags.forEach(tag => {
+        const chip = document.createElement("button");
+        chip.textContent = tag;
+        const active = _activeTagFilter === tag;
+        chip.style.cssText = `background:${active ? "var(--accent)" : "var(--surface)"}; color:${active ? "#fff" : "var(--text-muted)"}; border:1px solid var(--border); border-radius:12px; font-size:11px; padding:2px 9px; cursor:pointer;`;
+        chip.addEventListener("click", () => { _activeTagFilter = tag; loadPastSessions(true); });
+        tagBar.appendChild(chip);
+      });
+      transcript.insertBefore(tagBar, transcript.children[1]);
+    }).catch(() => {});
 
-    sorted.forEach(s => {
+    if (!sessions.length) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.style.height = "120px";
+      e.textContent = `No meetings tagged "${_activeTagFilter}"`;
+      transcript.appendChild(e);
+      return;
+    }
+
+    sessions.forEach(s => {
       const item = document.createElement("div");
       item.className = "session-item";
       const date = s.started_at ? new Date(s.started_at.replace(" ", "T") + "Z").toLocaleString() : "—";
@@ -401,9 +667,12 @@
         ? `<span class="s-badge ended">ended</span>`
         : `<span class="s-badge ongoing">live</span>`;
 
+      const tagChips = (s.tags || []).map(t =>
+        `<span style="background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:10px;padding:1px 6px;color:var(--text-muted);">${escHtml(t)}</span>`
+      ).join(" ");
       const body = document.createElement("div");
       body.className = "s-body";
-      body.innerHTML = `<div class="s-title">${escHtml(s.title)}${badge}</div><div class="s-meta">${date}</div>`;
+      body.innerHTML = `<div class="s-title">${escHtml(s.title)}${badge}</div><div class="s-meta">${date}${tagChips ? `<span style="margin-left:6px;">${tagChips}</span>` : ""}</div>`;
       body.addEventListener("click", () => loadSession(s.id, s.title));
 
       const actions = document.createElement("div");
@@ -423,6 +692,14 @@
       item.appendChild(actions);
       transcript.appendChild(item);
     });
+
+    if (sessions.length < total) {
+      const loadMore = document.createElement("button");
+      loadMore.style.cssText = "width:100%; margin-top:8px; background:var(--surface); border:1px solid var(--border); color:var(--text-muted); padding:8px; border-radius:6px; cursor:pointer; font-size:13px;";
+      loadMore.textContent = `Load more (${total - sessions.length} remaining)`;
+      loadMore.addEventListener("click", () => loadPastSessions(false));
+      transcript.appendChild(loadMore);
+    }
   }
 
   async function loadSession(id, title) {
@@ -440,10 +717,29 @@
       back.addEventListener("click", loadPastSessions);
       transcript.appendChild(back);
 
-      // Editable title
+      // Stats bar (async, fills in when ready)
+      const statsBar = document.createElement("div");
+      statsBar.className = "stats-bar";
+      statsBar.innerHTML = `<span style="color:var(--text-muted)">Loading stats…</span>`;
+      transcript.appendChild(statsBar);
+      fetch(`${API}/meeting/${id}/stats`)
+        .then(r => r.json())
+        .then(s => {
+          const dur = s.duration_seconds != null
+            ? `${Math.floor(s.duration_seconds / 60)}m ${Math.round(s.duration_seconds % 60)}s`
+            : "ongoing";
+          statsBar.innerHTML = `
+            <span>⏱ <strong>${dur}</strong></span>
+            <span>🗣 <strong>${s.utterance_count}</strong> utterances</span>
+            <span>📝 <strong>${s.word_count.toLocaleString()}</strong> words</span>
+            <span>❓ <strong>${s.answer_count}</strong> Q&amp;As</span>`;
+        })
+        .catch(() => { statsBar.innerHTML = ""; });
+
+      // Editable title + auto-title button
       const h = document.createElement("div");
       h.className = "editable-title";
-      h.style.marginBottom = "10px";
+      h.style.marginBottom = "6px";
       const titleSpan = document.createElement("span");
       titleSpan.textContent = title;
       const editBtn = document.createElement("button");
@@ -451,17 +747,122 @@
       editBtn.title = "Rename session";
       editBtn.textContent = "✏️";
       editBtn.addEventListener("click", () => startTitleEdit(id, titleSpan, editBtn));
+      const autoTitleBtn = document.createElement("button");
+      autoTitleBtn.className = "edit-title-btn";
+      autoTitleBtn.title = "Auto-generate title from transcript";
+      autoTitleBtn.textContent = "✨";
+      autoTitleBtn.style.marginLeft = "2px";
+      autoTitleBtn.addEventListener("click", async () => {
+        autoTitleBtn.disabled = true;
+        autoTitleBtn.textContent = "⏳";
+        try {
+          const r = await fetch(`${API}/meeting/${id}/title/generate`, { method: "POST" });
+          if (r.ok) {
+            autoTitleBtn.textContent = "✓";
+            setTimeout(() => { autoTitleBtn.textContent = "✨"; autoTitleBtn.disabled = false; }, 8000);
+          } else {
+            autoTitleBtn.textContent = "✨"; autoTitleBtn.disabled = false;
+          }
+        } catch { autoTitleBtn.textContent = "✨"; autoTitleBtn.disabled = false; }
+      });
       h.appendChild(titleSpan);
       h.appendChild(editBtn);
+      h.appendChild(autoTitleBtn);
       transcript.appendChild(h);
+
+      // Tags row
+      const tagsRow = document.createElement("div");
+      tagsRow.style.cssText = "display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px;";
+      const renderTags = (tags) => {
+        tagsRow.innerHTML = "";
+        tags.forEach(tag => {
+          const chip = document.createElement("span");
+          chip.style.cssText = "background:var(--surface); border:1px solid var(--border); border-radius:12px; font-size:11px; padding:2px 8px; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;";
+          chip.textContent = tag;
+          const rm = document.createElement("button");
+          rm.textContent = "×";
+          rm.style.cssText = "background:none; border:none; color:var(--text-muted); cursor:pointer; padding:0; line-height:1; font-size:13px;";
+          rm.title = `Remove tag "${tag}"`;
+          rm.addEventListener("click", async () => {
+            const res = await fetch(`${API}/meeting/${id}/tags/${encodeURIComponent(tag)}`, { method: "DELETE" });
+            if (res.ok) { const d = await res.json(); renderTags(d.tags); }
+          });
+          chip.appendChild(rm);
+          tagsRow.appendChild(chip);
+        });
+        // Add-tag input
+        const addInput = document.createElement("input");
+        addInput.type = "text";
+        addInput.placeholder = "+ add tag";
+        addInput.style.cssText = "background:transparent; border:1px dashed var(--border); border-radius:12px; font-size:11px; padding:2px 8px; color:var(--text-muted); width:80px; outline:none;";
+        addInput.addEventListener("keydown", async (e) => {
+          if (e.key !== "Enter") return;
+          const t = addInput.value.trim();
+          if (!t) return;
+          const res = await fetch(`${API}/meeting/${id}/tags`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tag: t }),
+          });
+          if (res.ok) { const d = await res.json(); renderTags(d.tags); }
+        });
+        tagsRow.appendChild(addInput);
+      };
+      // Load current tags
+      fetch(`${API}/meeting/${id}/tags`)
+        .then(r => r.ok ? r.json() : { tags: [] })
+        .then(d => renderTags(d.tags || []))
+        .catch(() => renderTags([]));
+      transcript.appendChild(tagsRow);
 
       const exportBar = document.createElement("div");
       exportBar.className = "export-bar";
       exportBar.innerHTML = `
         <span style="font-size:12px; color:var(--text-muted);">Export:</span>
         <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=txt" download>TXT</a>
-        <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=md" download>Markdown</a>`;
+        <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=md" download>Markdown</a>
+        <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=json" download>JSON</a>`;
       transcript.appendChild(exportBar);
+
+      // Notes card
+      const notesCard = document.createElement("div");
+      notesCard.style.cssText = "margin-bottom:10px;";
+      const notesToggle = document.createElement("button");
+      notesToggle.style.cssText = "background:none; border:none; color:var(--text-muted); font-size:12px; cursor:pointer; padding:0; margin-bottom:4px;";
+      notesToggle.textContent = "📝 Notes ▸";
+      const notesArea = document.createElement("textarea");
+      notesArea.style.cssText = "display:none; width:100%; min-height:80px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:13px; resize:vertical; font-family:inherit; line-height:1.5;";
+      notesArea.placeholder = "Add your personal notes for this meeting…";
+      notesToggle.addEventListener("click", () => {
+        const open = notesArea.style.display === "none";
+        notesArea.style.display = open ? "block" : "none";
+        notesToggle.textContent = open ? "📝 Notes ▾" : "📝 Notes ▸";
+      });
+      let _notesTimer = null;
+      notesArea.addEventListener("input", () => {
+        clearTimeout(_notesTimer);
+        _notesTimer = setTimeout(async () => {
+          try {
+            await fetch(`${API}/meeting/${id}/notes`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ notes: notesArea.value }),
+            });
+          } catch { /* best-effort autosave */ }
+        }, 800);
+      });
+      // Pre-fill notes
+      fetch(`${API}/meeting/${id}/notes`)
+        .then(r => r.json())
+        .then(d => { if (d.notes) notesArea.value = d.notes; })
+        .catch(() => {});
+      notesCard.appendChild(notesToggle);
+      notesCard.appendChild(notesArea);
+      transcript.appendChild(notesCard);
+
+      // Summary card and action items card (past session view)
+      const pastAiCard = buildPastActionItemsCard(id);
+      transcript.appendChild(pastAiCard);
 
       // Summary card
       const summaryCard = document.createElement("div");
@@ -491,6 +892,50 @@
       const divider = document.createElement("hr");
       divider.style.cssText = "border:none; border-top:1px solid var(--border); margin:12px 0;";
       transcript.appendChild(divider);
+
+      // Search bar (only useful when there are utterances)
+      if (data.utterances.length) {
+        const searchBar = document.createElement("div");
+        searchBar.className = "search-bar";
+        const searchInput = document.createElement("input");
+        searchInput.type = "text";
+        searchInput.placeholder = "Search transcript…";
+        const clearBtn = document.createElement("button");
+        clearBtn.className = "search-clear";
+        clearBtn.title = "Clear search";
+        clearBtn.textContent = "✕";
+        searchBar.appendChild(searchInput);
+        searchBar.appendChild(clearBtn);
+        transcript.appendChild(searchBar);
+
+        const noResultsEl = document.createElement("div");
+        noResultsEl.className = "search-no-results";
+        noResultsEl.style.display = "none";
+        noResultsEl.textContent = "No matches found.";
+        transcript.appendChild(noResultsEl);
+
+        const filterUtterances = (q) => {
+          const term = q.trim().toLowerCase();
+          const utts = transcript.querySelectorAll(".utterance");
+          let visible = 0;
+          utts.forEach(el => {
+            const text = el.querySelector(".text")?.textContent?.toLowerCase() || "";
+            if (!term || text.includes(term)) {
+              el.classList.remove("hidden");
+              visible++;
+            } else {
+              el.classList.add("hidden");
+            }
+          });
+          noResultsEl.style.display = (term && visible === 0) ? "" : "none";
+        };
+
+        searchInput.addEventListener("input", () => filterUtterances(searchInput.value));
+        clearBtn.addEventListener("click", () => {
+          searchInput.value = "";
+          filterUtterances("");
+        });
+      }
 
       if (!data.utterances.length) {
         const e = document.createElement("div");
@@ -574,6 +1019,104 @@
     });
   }
 
+  function buildPastActionItemsCard(id) {
+    const card = document.createElement("div");
+    card.className = "action-items-card";
+    const header = document.createElement("div");
+    header.className = "ai-header";
+    header.textContent = "✅ Action Items";
+    const textEl = document.createElement("div");
+    textEl.className = "ai-text";
+    textEl.style.color = "var(--text-muted)";
+    textEl.textContent = "No action items extracted yet.";
+    const actionsEl = document.createElement("div");
+    actionsEl.className = "ai-actions";
+    const btnGen = document.createElement("button");
+    btnGen.className = "btn-action-items";
+    btnGen.textContent = "✨ Extract Action Items";
+    btnGen.addEventListener("click", () => requestActionItems(id, textEl, btnGen, false));
+    actionsEl.appendChild(btnGen);
+    card.appendChild(header);
+    card.appendChild(textEl);
+    card.appendChild(actionsEl);
+
+    // Pre-fill cached action items if available
+    fetchCachedActionItems(id, textEl, btnGen);
+    return card;
+  }
+
+  async function fetchCachedActionItems(id, textEl, btn) {
+    try {
+      const res = await fetch(`${API}/meeting/${id}/action-items`, { method: "POST" });
+      const data = await res.json();
+      if (data.cached && data.text) {
+        textEl.style.color = "var(--text)";
+        textEl.textContent = data.text;
+        btn.textContent = "↺ Regenerate";
+        btn.addEventListener("click", () => requestActionItems(id, textEl, btn, true), { once: true });
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function requestActionItems(id, textEl, btn, forceRegen) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Extracting…";
+    textEl.style.color = "var(--text-muted)";
+    textEl.textContent = "";
+
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    cursor.textContent = "▊";
+    textEl.appendChild(cursor);
+
+    try {
+      const endpoint = forceRegen
+        ? `${API}/meeting/${id}/action-items/regenerate`
+        : `${API}/meeting/${id}/action-items`;
+      const res = await fetch(endpoint, { method: "POST" });
+      const data = await res.json();
+
+      if (data.cached && data.text) {
+        cursor.remove();
+        textEl.style.color = "var(--text)";
+        textEl.textContent = data.text;
+        btn.disabled = false;
+        btn.textContent = "↺ Regenerate";
+        return;
+      }
+
+      const actionItemsId = data.action_items_id;
+      const tempWs = new WebSocket(`ws://localhost:8000/ws/${id}`);
+      tempWs.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "action_items_start" && msg.id === actionItemsId) {
+          textEl.style.color = "var(--text)";
+        }
+        if (msg.type === "action_items_token" && msg.id === actionItemsId) {
+          textEl.insertBefore(document.createTextNode(msg.token), cursor);
+        }
+        if (msg.type === "action_items_end" && msg.id === actionItemsId) {
+          cursor.remove();
+          tempWs.close();
+          btn.disabled = false;
+          btn.textContent = "↺ Regenerate";
+          btn.onclick = () => requestActionItems(id, textEl, btn, true);
+          actionsEl.appendChild(makeCopyBtn(() => textEl.textContent));
+        }
+      };
+      tempWs.onerror = () => {
+        cursor.remove();
+        textEl.textContent = "Error extracting action items. Is Ollama running?";
+        btn.disabled = false;
+        btn.textContent = "↺ Retry";
+      };
+    } catch {
+      textEl.textContent = "Error extracting action items.";
+      btn.disabled = false;
+      btn.textContent = "↺ Retry";
+    }
+  }
+
   async function fetchCachedSummary(id, textEl, btn) {
     try {
       const res = await fetch(`${API}/meeting/${id}/summary`, { method: "POST" });
@@ -635,6 +1178,7 @@
           btn.disabled = false;
           btn.textContent = "↺ Regenerate";
           btn.onclick = () => requestSummary(id, textEl, btn, true);
+          summaryActionsEl.appendChild(makeCopyBtn(() => textEl.textContent));
         }
       };
       tempWs.onerror = () => {
@@ -680,24 +1224,14 @@
       btnEnd.disabled = false;
       btnPtt.disabled = false;
       btnSummarize.disabled = false;
+      btnActionItems.disabled = false;
       titleInput.disabled = true;
       setRecStatus(true, "Recording");
       sessionInfo.textContent = `Session: ${sessionId.slice(0, 8)}`;
       transcript.innerHTML = "";
       answers.innerHTML = "";
 
-      ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "utterance")      addUtterance(msg);
-        if (msg.type === "answer_start")   startAnswer(msg);
-        if (msg.type === "answer_token")   appendToken(msg);
-        if (msg.type === "answer_end")     finalizeAnswer(msg);
-        if (msg.type === "summary_start")  startActiveSummary(msg);
-        if (msg.type === "summary_token")  appendSummaryToken(msg);
-        if (msg.type === "summary_end")    finalizeActiveSummary(msg);
-      };
-      ws.onerror = () => setRecStatus(true, "Recording (WS error)");
+      connectWs(sessionId);
     } catch {
       setRecStatus(false, "Error — is the server running?");
       btnStart.disabled = false;
@@ -711,8 +1245,10 @@
     btnEnd.disabled = true;
     btnPtt.disabled = true;
     btnSummarize.disabled = true;
+    btnActionItems.disabled = true;
     titleInput.disabled = false;
     await fetch(`${API}/meeting/${sessionId}/end`, { method: "POST" });
+    if (_wsRetryTimer) { clearTimeout(_wsRetryTimer); _wsRetryTimer = null; }
     if (ws) ws.close();
     setRecStatus(false, "Meeting ended");
     sessionInfo.textContent += " · ended";
@@ -735,6 +1271,66 @@
       btnSummarize.textContent = "📋 Summarize meeting";
     }
   });
+
+  // ── Action items (active meeting) ──────────────────────────────────────────
+  btnActionItems.addEventListener("click", async () => {
+    if (!sessionId) return;
+    btnActionItems.disabled = true;
+    btnActionItems.textContent = "⏳ Extracting…";
+    try {
+      await fetch(`${API}/meeting/${sessionId}/action-items`, { method: "POST" });
+      // Tokens arrive via WebSocket (action_items_start / token / end)
+    } catch {
+      showToast("Could not reach the server");
+      btnActionItems.disabled = false;
+      btnActionItems.textContent = "✅ Extract action items";
+    }
+  });
+
+  // ── WebSocket (with auto-reconnect) ───────────────────────────────────────
+  let _wsRetryDelay = 1000;
+  let _wsRetryTimer = null;
+
+  function connectWs(sid) {
+    if (!sessionId || sessionId !== sid) return; // session ended
+    ws = new WebSocket(`ws://localhost:8000/ws/${sid}`);
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "ping")                return; // keepalive — ignore
+      if (msg.type === "utterance")           addUtterance(msg);
+      if (msg.type === "answer_start")        startAnswer(msg);
+      if (msg.type === "answer_token")        appendToken(msg);
+      if (msg.type === "answer_end")          finalizeAnswer(msg);
+      if (msg.type === "summary_start")       startActiveSummary(msg);
+      if (msg.type === "summary_token")       appendSummaryToken(msg);
+      if (msg.type === "summary_end")         finalizeActiveSummary(msg);
+      if (msg.type === "action_items_start")  startActiveActionItems(msg);
+      if (msg.type === "action_items_token")  appendActionItemsToken(msg);
+      if (msg.type === "action_items_end")    finalizeActiveActionItems(msg);
+      if (msg.type === "title_updated") {
+        // Update the live title input if visible
+        if (titleInput) titleInput.value = msg.title;
+        document.title = `${msg.title} — Meeting Copilot`;
+      }
+    };
+
+    ws.onopen = () => {
+      _wsRetryDelay = 1000; // reset backoff on successful connect
+      setRecStatus(true, "Recording");
+    };
+
+    ws.onerror = () => setRecStatus(true, "Recording (WS error)");
+
+    ws.onclose = () => {
+      if (!sessionId || sessionId !== sid) return; // intentional close
+      setRecStatus(true, `Recording (reconnecting…)`);
+      _wsRetryTimer = setTimeout(() => {
+        _wsRetryDelay = Math.min(_wsRetryDelay * 2, 30000);
+        connectWs(sid);
+      }, _wsRetryDelay);
+    };
+  }
 
   // ── PTT ────────────────────────────────────────────────────────────────────
   btnPtt.addEventListener("mousedown", startRecording);
@@ -896,9 +1492,70 @@
     if (cursor) cursor.remove();
     delete pendingSummaries[msg.id];
     const card = el.closest(".summary-card");
-    if (card) card.style.borderColor = "";
+    if (card) {
+      card.style.borderColor = "";
+      const actionsEl = card.querySelector(".summary-actions") || (() => {
+        const a = document.createElement("div");
+        a.className = "summary-actions";
+        card.appendChild(a);
+        return a;
+      })();
+      actionsEl.appendChild(makeCopyBtn(() => el.textContent));
+    }
     btnSummarize.disabled = false;
     btnSummarize.textContent = "📋 Summarize meeting";
+  }
+
+  function startActiveActionItems(msg) {
+    const empty = answers.querySelector(".empty");
+    if (empty) empty.remove();
+
+    const card = document.createElement("div");
+    card.className = "action-items-card";
+    card.dataset.actionItemsId = msg.id;
+    card.style.borderColor = "var(--green)";
+
+    const header = document.createElement("div");
+    header.className = "ai-header";
+    header.textContent = "✅ Action Items";
+
+    const textEl = document.createElement("div");
+    textEl.className = "ai-text";
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    cursor.textContent = "▊";
+    textEl.appendChild(cursor);
+
+    card.appendChild(header);
+    card.appendChild(textEl);
+    answers.prepend(card);
+    pendingActionItems[msg.id] = textEl;
+  }
+
+  function appendActionItemsToken(msg) {
+    const el = pendingActionItems[msg.id];
+    if (!el) return;
+    const cursor = el.querySelector(".cursor");
+    if (cursor) el.insertBefore(document.createTextNode(msg.token), cursor);
+    else el.appendChild(document.createTextNode(msg.token));
+  }
+
+  function finalizeActiveActionItems(msg) {
+    const el = pendingActionItems[msg.id];
+    if (!el) return;
+    const cursor = el.querySelector(".cursor");
+    if (cursor) cursor.remove();
+    delete pendingActionItems[msg.id];
+    const card = el.closest(".action-items-card");
+    if (card) {
+      card.style.borderColor = "";
+      const actionsEl = document.createElement("div");
+      actionsEl.className = "ai-actions";
+      actionsEl.appendChild(makeCopyBtn(() => el.textContent));
+      card.appendChild(actionsEl);
+    }
+    btnActionItems.disabled = false;
+    btnActionItems.textContent = "✅ Extract action items";
   }
 
   function showToast(msg) {
@@ -915,6 +1572,82 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
   }
+
+  // ── Copy to clipboard ──────────────────────────────────────────────────────
+  function makeCopyBtn(getTextFn) {
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.textContent = "Copy";
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(getTextFn());
+        btn.textContent = "Copied!";
+        btn.classList.add("copied");
+        setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 2000);
+      } catch {
+        showToast("Copy failed — check browser permissions");
+      }
+    });
+    return btn;
+  }
+
+  // ── Settings ───────────────────────────────────────────────────────────────
+  const settingsOverlay = document.getElementById("settings-overlay");
+  const cfgOllamaModel  = document.getElementById("cfg-ollama-model");
+  const cfgWhisperLang  = document.getElementById("cfg-whisper-lang");
+
+  document.getElementById("btn-settings").addEventListener("click", async () => {
+    try {
+      const [sRes, mRes] = await Promise.all([
+        fetch(`${API}/settings`),
+        fetch(`${API}/settings/models`),
+      ]);
+      const s = await sRes.json();
+      cfgOllamaModel.value = s.ollama_model || "";
+      cfgWhisperLang.value = s.whisper_language || "";
+
+      const { models = [] } = await mRes.json();
+      const datalist = document.getElementById("ollama-models-list");
+      datalist.innerHTML = "";
+      models.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m;
+        datalist.appendChild(opt);
+      });
+    } catch { /* best-effort pre-fill */ }
+    settingsOverlay.classList.add("open");
+  });
+
+  document.getElementById("settings-cancel").addEventListener("click", () => {
+    settingsOverlay.classList.remove("open");
+  });
+
+  settingsOverlay.addEventListener("click", (e) => {
+    if (e.target === settingsOverlay) settingsOverlay.classList.remove("open");
+  });
+
+  document.getElementById("settings-save").addEventListener("click", async () => {
+    const body = {};
+    if (cfgOllamaModel.value.trim()) body.ollama_model = cfgOllamaModel.value.trim();
+    if (cfgWhisperLang.value.trim())  body.whisper_language = cfgWhisperLang.value.trim();
+    if (!Object.keys(body).length) { settingsOverlay.classList.remove("open"); return; }
+    try {
+      const res = await fetch(`${API}/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        showToast(err.detail || "Settings save failed");
+        return;
+      }
+      settingsOverlay.classList.remove("open");
+      await checkHealth(); // refresh Ollama status with new model
+    } catch {
+      showToast("Could not save settings");
+    }
+  });
 </script>
 </body>
 </html>
