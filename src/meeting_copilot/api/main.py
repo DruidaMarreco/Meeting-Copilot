@@ -356,6 +356,61 @@ async def list_meetings(
     return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
 
 
+@app.get("/meeting/filter/date")
+async def filter_meetings_by_date(
+    start_date: str = Query(..., description="ISO format start date (YYYY-MM-DD)"),
+    end_date: str | None = Query(default=None, description="ISO format end date (YYYY-MM-DD)"),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    """Filter meetings by date range (start_date is required, end_date defaults to start_date)."""
+    from datetime import datetime
+
+    try:
+        start = datetime.fromisoformat(f"{start_date}T00:00:00").isoformat()
+        if end_date:
+            end = datetime.fromisoformat(f"{end_date}T23:59:59").isoformat()
+        else:
+            end = datetime.fromisoformat(f"{start_date}T23:59:59").isoformat()
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid date format. Use ISO format (YYYY-MM-DD)",
+        )
+
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM sessions
+               WHERE started_at >= ? AND started_at <= ?
+               ORDER BY started_at DESC
+               LIMIT ? OFFSET ?""",
+            (start, end, limit, offset),
+        ).fetchall()
+
+        total_row = conn.execute(
+            """SELECT COUNT(*) as cnt FROM sessions
+               WHERE started_at >= ? AND started_at <= ?""",
+            (start, end),
+        ).fetchone()
+
+        sessions = [dict(r) for r in rows]
+        for s in sessions:
+            tag_rows = conn.execute(
+                "SELECT tag FROM session_tags WHERE session_id = ? ORDER BY tag ASC",
+                (s["id"],),
+            ).fetchall()
+            s["tags"] = [r["tag"] for r in tag_rows]
+
+    return {
+        "sessions": sessions,
+        "total": total_row["cnt"] if total_row else 0,
+        "limit": limit,
+        "offset": offset,
+        "start_date": start_date,
+        "end_date": end_date or start_date,
+    }
+
+
 @app.get("/meeting/search")
 async def search_meetings(q: str = Query(..., min_length=1)):
     """Search utterances across all sessions."""

@@ -1252,3 +1252,70 @@ def test_export_stats_csv_has_headers(client):
     assert "answer_count" in headers
     assert "is_starred" in headers
     assert "tags" in headers
+
+
+# ── Date Filtering ────────────────────────────────────────────────────────────
+
+
+def test_filter_meetings_by_date(client):
+    from datetime import datetime, timedelta
+
+    today = datetime.now().date().isoformat()
+    yesterday = (datetime.now() - timedelta(days=1)).date().isoformat()
+
+    client.post("/meeting/start", json={"title": "Today Meeting"})
+    r = client.get(f"/meeting/filter/date?start_date={today}")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] >= 1
+    titles = {s["title"] for s in data["sessions"]}
+    assert "Today Meeting" in titles
+
+
+def test_filter_meetings_by_date_range(client):
+    from datetime import datetime, timedelta
+
+    today = datetime.now().date().isoformat()
+    tomorrow = (datetime.now() + timedelta(days=1)).date().isoformat()
+    far_future = (datetime.now() + timedelta(days=30)).date().isoformat()
+
+    client.post("/meeting/start", json={"title": "Meeting Today"})
+
+    # Should find the meeting within range
+    r = client.get(f"/meeting/filter/date?start_date={today}&end_date={tomorrow}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] >= 1
+
+    # Should not find the meeting outside range
+    r = client.get(f"/meeting/filter/date?start_date={far_future}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 0
+
+
+def test_filter_meetings_invalid_date_format(client):
+    r = client.get("/meeting/filter/date?start_date=invalid-date")
+    assert r.status_code == 422
+    assert "Invalid date format" in r.json()["detail"]
+
+
+def test_filter_meetings_date_missing_start(client):
+    r = client.get("/meeting/filter/date")
+    assert r.status_code == 422
+
+
+def test_filter_meetings_returns_tags(client):
+    from datetime import datetime
+
+    today = datetime.now().date().isoformat()
+    s1 = client.post("/meeting/start", json={"title": "Tagged Meeting"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "important"})
+
+    r = client.get(f"/meeting/filter/date?start_date={today}")
+    assert r.status_code == 200
+    data = r.json()
+    tagged_session = next((s for s in data["sessions"] if s["title"] == "Tagged Meeting"), None)
+    assert tagged_session is not None
+    assert "important" in tagged_session["tags"]
