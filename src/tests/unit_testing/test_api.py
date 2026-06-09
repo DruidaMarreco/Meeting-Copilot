@@ -296,7 +296,9 @@ def test_rename_meeting(client):
 
     import meeting_copilot.storage.db as db_module
 
-    assert db_module.get_session(sid)["title"] == "New Name"
+    session = db_module.get_session(sid)
+    assert session is not None
+    assert session["title"] == "New Name"
 
 
 def test_rename_empty_title_returns_422(client):
