@@ -366,6 +366,10 @@ class RenameRequest(BaseModel):
     title: str
 
 
+class CloneRequest(BaseModel):
+    title: str | None = None
+
+
 @app.patch("/meeting/{session_id}/title")
 async def rename_meeting(session_id: str, req: RenameRequest):
     title = req.title.strip()
@@ -389,6 +393,37 @@ async def auto_generate_title(session_id: str):
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, _auto_title_session, session_id)
     return {"ok": True, "session_id": session_id}
+
+
+@app.post("/meeting/{session_id}/clone")
+async def clone_meeting(session_id: str, req: CloneRequest = CloneRequest()):
+    """
+    Clone a meeting, copying its title, notes, tags, and metadata to a new session.
+    Timestamps are reset to the current time.
+    """
+    original = db.get_session(session_id)
+    if not original:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    title = (
+        req.title if req.title and req.title.strip() else None
+    ) or f"{original['title']} (copy)"
+    new_session_id, _ = db.create_session(title)
+    new_session = db.get_session(new_session_id)
+
+    if original.get("notes"):
+        save_notes(new_session_id, original["notes"])
+
+    original_tags = get_tags(session_id)
+    for tag in original_tags:
+        add_tag(new_session_id, tag)
+
+    return {
+        "ok": True,
+        "original_session_id": session_id,
+        "new_session_id": new_session_id,
+        "new_session": new_session,
+    }
 
 
 @app.get("/meeting/{session_id}/tags")

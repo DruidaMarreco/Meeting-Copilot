@@ -1094,3 +1094,77 @@ def test_bulk_remove_tag_skips_missing_sessions(client):
     # Verify tag was removed
     tags = client.get(f"/meeting/{s1}/tags").json()["tags"]
     assert "test" not in tags
+
+
+# ── Clone ──────────────────────────────────────────────────────────────────────
+
+
+def test_clone_meeting_default_title(client):
+    s1 = client.post("/meeting/start", json={"title": "Original Meeting"}).json()["session_id"]
+
+    r = client.post(f"/meeting/{s1}/clone")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert r.json()["original_session_id"] == s1
+    new_id = r.json()["new_session_id"]
+    assert new_id != s1
+
+    # Verify new session has correct title
+    assert r.json()["new_session"]["title"] == "Original Meeting (copy)"
+
+
+def test_clone_meeting_custom_title(client):
+    s1 = client.post("/meeting/start", json={"title": "Original"}).json()["session_id"]
+
+    r = client.post(f"/meeting/{s1}/clone", json={"title": "Custom Title"})
+    assert r.status_code == 200
+    new_id = r.json()["new_session_id"]
+
+    # Verify new session has custom title
+    assert r.json()["new_session"]["title"] == "Custom Title"
+
+
+def test_clone_meeting_copies_notes(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting"}).json()["session_id"]
+    client.patch(f"/meeting/{s1}/notes", json={"notes": "Important notes"})
+
+    r = client.post(f"/meeting/{s1}/clone")
+    new_id = r.json()["new_session_id"]
+
+    # Verify notes were copied
+    notes = client.get(f"/meeting/{new_id}/notes").json()
+    assert notes["notes"] == "Important notes"
+
+
+def test_clone_meeting_copies_tags(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "important"})
+    client.post(f"/meeting/{s1}/tags", json={"tag": "review"})
+
+    r = client.post(f"/meeting/{s1}/clone")
+    new_id = r.json()["new_session_id"]
+
+    # Verify tags were copied
+    tags = client.get(f"/meeting/{new_id}/tags").json()["tags"]
+    assert "important" in tags
+    assert "review" in tags
+
+
+def test_clone_unknown_session(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/clone")
+    assert r.status_code == 404
+    assert "Session not found" in r.json()["detail"]
+
+
+def test_clone_meeting_independent_session(client):
+    s1 = client.post("/meeting/start", json={"title": "Original"}).json()["session_id"]
+    client.patch(f"/meeting/{s1}/notes", json={"notes": "Original notes"})
+
+    new_id = client.post(f"/meeting/{s1}/clone").json()["new_session_id"]
+
+    # Modify original session
+    client.patch(f"/meeting/{s1}/notes", json={"notes": "Modified notes"})
+
+    # Verify cloned session is independent
+    new_notes = client.get(f"/meeting/{new_id}/notes").json()["notes"]
+    assert new_notes == "Original notes"
