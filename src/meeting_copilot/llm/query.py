@@ -30,6 +30,18 @@ def _ollama():
         raise RuntimeError("ollama is not installed. Run: uv sync --extra full") from exc
 
 
+def _current_model(model: str | None) -> str:
+    """Return explicit model override, or the runtime-configured default."""
+    if model is not None:
+        return model
+    try:
+        from meeting_copilot import runtime_settings  # noqa: PLC0415
+
+        return runtime_settings.get_ollama_model()
+    except Exception:
+        return OLLAMA_MODEL
+
+
 DEFAULT_MODEL = OLLAMA_MODEL
 CONTEXT_WINDOW_SECONDS = 300  # last 5 minutes always included
 TOP_K_SEMANTIC = 5
@@ -83,7 +95,7 @@ def _extract_content(chunk_or_response) -> str:
 def answer(
     session_id: str,
     question: str,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     stream: bool = False,
 ) -> str | Generator[str, None, None]:
     """
@@ -91,6 +103,7 @@ def answer(
 
     Returns a full string or a generator of text chunks when stream=True.
     """
+    resolved = _current_model(model)
     context = _build_context(session_id, question)
     system = SYSTEM_PROMPT.format(context=context)
     messages = [
@@ -101,12 +114,12 @@ def answer(
     if stream:
 
         def _stream_gen():
-            for chunk in _ollama().chat(model=model, messages=messages, stream=True):
+            for chunk in _ollama().chat(model=resolved, messages=messages, stream=True):
                 yield _extract_content(chunk)
 
         return _stream_gen()
     else:
-        return _extract_content(_ollama().chat(model=model, messages=messages))
+        return _extract_content(_ollama().chat(model=resolved, messages=messages))
 
 
 SUMMARY_PROMPT = """You are a meeting assistant. Summarize the following meeting transcript.
@@ -123,10 +136,11 @@ Meeting transcript:
 
 def summarize(
     session_id: str,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     stream: bool = False,
 ) -> str | Generator[str, None, None]:
     """Generate a structured summary of the full meeting transcript."""
+    resolved = _current_model(model)
     utterances = db.get_utterances(session_id)
     if not utterances:
         transcript = "(No transcript available)"
@@ -140,12 +154,12 @@ def summarize(
     if stream:
 
         def _stream_gen():
-            for chunk in _ollama().chat(model=model, messages=messages, stream=True):
+            for chunk in _ollama().chat(model=resolved, messages=messages, stream=True):
                 yield _extract_content(chunk)
 
         return _stream_gen()
     else:
-        return _extract_content(_ollama().chat(model=model, messages=messages))
+        return _extract_content(_ollama().chat(model=resolved, messages=messages))
 
 
 ACTION_ITEMS_PROMPT = """You are a meeting assistant. Extract all action items from the following meeting transcript.
@@ -162,10 +176,11 @@ Meeting transcript:
 
 def extract_action_items(
     session_id: str,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     stream: bool = False,
 ) -> str | Generator[str, None, None]:
     """Extract action items from the meeting transcript."""
+    resolved = _current_model(model)
     utterances = db.get_utterances(session_id)
     if not utterances:
         transcript = "(No transcript available)"
@@ -179,16 +194,17 @@ def extract_action_items(
     if stream:
 
         def _stream_gen():
-            for chunk in _ollama().chat(model=model, messages=messages, stream=True):
+            for chunk in _ollama().chat(model=resolved, messages=messages, stream=True):
                 yield _extract_content(chunk)
 
         return _stream_gen()
     else:
-        return _extract_content(_ollama().chat(model=model, messages=messages))
+        return _extract_content(_ollama().chat(model=resolved, messages=messages))
 
 
-def check_ollama(model: str = DEFAULT_MODEL) -> bool:
+def check_ollama(model: str | None = None) -> bool:
     """Return True if Ollama is running and the requested model is available."""
+    resolved = _current_model(model)
     try:
         response = _ollama().list()
         # SDK >=0.3: ListResponse with .models (list of Model objects, .model attr)
@@ -199,6 +215,6 @@ def check_ollama(model: str = DEFAULT_MODEL) -> bool:
             ]
         else:
             names = [m.get("model", m.get("name", "")) for m in response.get("models", [])]
-        return any(model in n for n in names)
+        return any(resolved in n for n in names)
     except Exception:
         return False

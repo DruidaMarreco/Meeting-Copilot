@@ -11,6 +11,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def reset_runtime_settings():
+    """Restore runtime_settings to defaults after each test."""
+    import meeting_copilot.runtime_settings as rs
+
+    original = rs.get()
+    yield
+    rs._state.update(original)
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     """TestClient with DB and all hardware deps mocked out."""
@@ -477,4 +487,43 @@ def test_search_meetings_no_results(client):
 
 def test_search_meetings_missing_query_returns_422(client):
     r = client.get("/meeting/search")
+    assert r.status_code == 422
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+
+def test_get_settings_returns_defaults(client):
+    r = client.get("/settings")
+    assert r.status_code == 200
+    data = r.json()
+    assert "ollama_model" in data
+    assert "whisper_language" in data
+    assert "whisper_model_size" in data
+
+
+def test_patch_settings_ollama_model(client):
+    r = client.patch("/settings", json={"ollama_model": "mistral"})
+    assert r.status_code == 200
+    assert r.json()["ollama_model"] == "mistral"
+
+    # Verify GET reflects the change
+    assert client.get("/settings").json()["ollama_model"] == "mistral"
+
+
+def test_patch_settings_whisper_language(client):
+    r = client.patch("/settings", json={"whisper_language": "pt"})
+    assert r.status_code == 200
+    assert r.json()["whisper_language"] == "pt"
+
+
+def test_patch_settings_empty_body_is_noop(client):
+    before = client.get("/settings").json()
+    r = client.patch("/settings", json={})
+    assert r.status_code == 200
+    assert r.json() == before
+
+
+def test_patch_settings_readonly_key_returns_422(client):
+    r = client.patch("/settings", json={"whisper_model_size": "medium"})
     assert r.status_code == 422

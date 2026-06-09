@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from meeting_copilot import runtime_settings
 from meeting_copilot.api import ws as websocket_manager
 from meeting_copilot.audio.capture import AudioCapture
 from meeting_copilot.config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_MODEL_SIZE
@@ -156,6 +157,31 @@ async def serve_ui():
 @app.get("/health")
 async def health():
     return {"ok": True, "ollama_available": check_ollama()}
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+
+class SettingsPatch(BaseModel):
+    ollama_model: str | None = None
+    whisper_language: str | None = None
+    whisper_model_size: str | None = None  # accepted but read-only — raises 422
+
+
+@app.get("/settings")
+async def get_settings():
+    return runtime_settings.get()
+
+
+@app.patch("/settings")
+async def update_settings(req: SettingsPatch):
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not updates:
+        return runtime_settings.get()
+    try:
+        return runtime_settings.patch(updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.post("/meeting/start", response_model=StartResponse)
