@@ -14,10 +14,12 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import re
 import tempfile
 import uuid
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -462,6 +464,11 @@ class NotesRequest(BaseModel):
     notes: str
 
 
+class BulkExportRequest(BaseModel):
+    session_ids: list[str]
+    format: str = "txt"
+
+
 @app.get("/meeting/{session_id}/notes")
 async def get_notes(session_id: str):
     session = db.get_session(session_id)
@@ -613,6 +620,50 @@ async def export_transcript(
         content=body,
         media_type="text/plain; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{name}.txt"'},
+    )
+
+
+@app.post("/meeting/bulk-export")
+async def bulk_export(req: BulkExportRequest):
+    if not req.session_ids:
+        raise HTTPException(status_code=400, detail="session_ids cannot be empty")
+    if req.format not in ("txt", "md", "json"):
+        raise HTTPException(status_code=400, detail="format must be txt, md, or json")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for session_id in req.session_ids:
+            session = db.get_session(session_id)
+            if not session:
+                continue  # Skip sessions that don't exist
+            utterances = db.get_utterances(session_id)
+            answers = db.get_answers(session_id)
+            name = _safe_filename(session["title"])
+
+            if req.format == "json":
+                import json as _json  # noqa: PLC0415
+
+                payload = {
+                    "session": session,
+                    "utterances": utterances,
+                    "answers": answers,
+                }
+                content = _json.dumps(payload, indent=2, default=str)
+                filename = f"{name}.json"
+            elif req.format == "md":
+                content = _export_md(session, utterances, answers)
+                filename = f"{name}.md"
+            else:  # txt
+                content = _export_txt(session, utterances, answers)
+                filename = f"{name}.txt"
+
+            zf.writestr(filename, content)
+
+    zip_buffer.seek(0)
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=meetings_export.zip"},
     )
 
 

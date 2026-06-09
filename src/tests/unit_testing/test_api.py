@@ -5,6 +5,8 @@ Heavy dependencies (WhisperModel, AudioCapture, Ollama) are mocked so
 these tests run without GPU, audio hardware, or a running Ollama server.
 """
 
+import io
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -857,3 +859,96 @@ def test_list_starred_meetings(client):
 def test_star_unknown_session(client):
     r = client.post("/meeting/00000000-0000-0000-0000-000000000000/star")
     assert r.status_code == 404
+
+
+# ── Bulk Export ────────────────────────────────────────────────────────────────
+
+
+def test_bulk_export_txt(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1, s2], "format": "txt"})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert len(z.namelist()) == 2
+        names = z.namelist()
+        assert any("meeting-1" in n.lower() for n in names)
+        assert any("meeting-2" in n.lower() for n in names)
+
+
+def test_bulk_export_md(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1, s2], "format": "md"})
+    assert r.status_code == 200
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert len(z.namelist()) == 2
+        for name in z.namelist():
+            assert name.endswith(".md")
+
+
+def test_bulk_export_json(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1], "format": "json"})
+    assert r.status_code == 200
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert len(z.namelist()) == 1
+        assert z.namelist()[0].endswith(".json")
+        content = z.read(z.namelist()[0]).decode()
+        data = json.loads(content)
+        assert "session" in data
+        assert "utterances" in data
+        assert "answers" in data
+
+
+def test_bulk_export_empty_list(client):
+    r = client.post("/meeting/bulk-export", json={"session_ids": [], "format": "txt"})
+    assert r.status_code == 400
+    assert "cannot be empty" in r.json()["detail"]
+
+
+def test_bulk_export_invalid_format(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1], "format": "pdf"})
+    assert r.status_code == 400
+    assert "must be txt, md, or json" in r.json()["detail"]
+
+
+def test_bulk_export_skips_missing_sessions(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    unknown_id = "00000000-0000-0000-0000-000000000000"
+
+    r = client.post(
+        "/meeting/bulk-export",
+        json={"session_ids": [s1, unknown_id], "format": "txt"},
+    )
+    assert r.status_code == 200
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert len(z.namelist()) == 1  # Only the existing session
+
+
+def test_bulk_export_default_format(client):
+    import zipfile as zf
+
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    r = client.post("/meeting/bulk-export", json={"session_ids": [s1]})
+    assert r.status_code == 200
+
+    with zf.ZipFile(io.BytesIO(r.content)) as z:
+        assert z.namelist()[0].endswith(".txt")
