@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# All stages run through uv (https://docs.astral.sh/uv/). `uv sync --extra dev`
+# installs the core deps plus the dev tools (black/ruff/ty/pytest).
+
+jobs:
+  # ── Lint & Format ─────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Format (ruff + black)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - run: uv sync --extra dev
+      - name: ruff (lint)
+        run: uv run ruff check .
+      - name: black (format check)
+        run: uv run black --check --diff .
+
+  # ── Type-check ────────────────────────────────────────────────────────────
+  typecheck:
+    name: Type-check (ty)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - run: uv sync --extra dev
+      - run: uv run ty check src
+
+  # ── Unit & Integration Tests ──────────────────────────────────────────────
+  test:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - run: uv sync --extra dev
+      # Runs unit + integration; mass_testing is excluded via pyproject addopts.
+      - run: uv run pytest
+
+  # ── Metrics / Mass Testing (DISABLED) ─────────────────────────────────────
+  # Folded in from the old metrics.yml. Uncomment when ground-truth datasets
+  # are ready; excluded from the default run via `--ignore=src/tests/mass_testing`.
+  # mass-test:
+  #   name: Mass Testing (Metrics)
+  #   runs-on: ubuntu-latest
+  #   needs: [test]
+  #   if: github.ref == 'refs/heads/main'
+  #   env:
+  #     DATASET_PATH: ${{ secrets.DATASET_PATH }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: astral-sh/setup-uv@v5
+  #       with:
+  #         enable-cache: true
+  #         cache-dependency-glob: "uv.lock"
+  #     - run: uv sync --extra dev
+  #     - run: uv run pytest src/tests/mass_testing/ -v --tb=short

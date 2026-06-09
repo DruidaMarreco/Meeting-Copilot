@@ -10,27 +10,34 @@ Recommended for meetings: small (fast, decent accuracy) or medium (slower, bette
 """
 
 from __future__ import annotations
+
 import threading
 import time
-import numpy as np
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from faster_whisper import WhisperModel
+from collections.abc import Callable
+from dataclasses import dataclass
 
+import numpy as np
+
+from meeting_copilot.config import (
+    WHISPER_COMPUTE_TYPE,
+    WHISPER_DEVICE,
+    WHISPER_LANGUAGE,
+    WHISPER_MODEL_SIZE,
+)
 
 SAMPLE_RATE = 16000
-SILENCE_THRESHOLD = 0.01   # RMS below this = silence
-SILENCE_DURATION = 1.0     # seconds of silence before flush
-MAX_BUFFER_SECONDS = 30    # force flush after this long regardless
-MIN_CHUNK_SECONDS = 0.5    # don't flush tiny snippets
+SILENCE_THRESHOLD = 0.01  # RMS below this = silence
+SILENCE_DURATION = 1.0  # seconds of silence before flush
+MAX_BUFFER_SECONDS = 30  # force flush after this long regardless
+MIN_CHUNK_SECONDS = 0.5  # don't flush tiny snippets
 
 
 @dataclass
 class TranscriptChunk:
     text: str
-    start_time: float          # seconds since meeting start
+    start_time: float  # seconds since meeting start
     end_time: float
-    speaker: Optional[str] = None   # reserved for future diarization
+    speaker: str | None = None  # reserved for future diarization
     confidence: float = 1.0
 
 
@@ -42,12 +49,19 @@ class TranscriptionEngine:
 
     def __init__(
         self,
-        model_size: str = "small",
-        device: str = "cpu",
-        compute_type: str = "int8",
-        on_transcript: Optional[Callable[[TranscriptChunk], None]] = None,
-        language: str = "en",
+        model_size: str = WHISPER_MODEL_SIZE,
+        device: str = WHISPER_DEVICE,
+        compute_type: str = WHISPER_COMPUTE_TYPE,
+        on_transcript: Callable[[TranscriptChunk], None] | None = None,
+        language: str = WHISPER_LANGUAGE,
     ):
+        try:
+            from faster_whisper import WhisperModel  # noqa: PLC0415
+        except ImportError as exc:
+            raise RuntimeError(
+                "faster_whisper is not installed. Run: uv sync --extra full"
+            ) from exc
+
         print(f"[transcription] Loading faster-whisper {model_size} ({device}/{compute_type})…")
         self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
         self.on_transcript = on_transcript

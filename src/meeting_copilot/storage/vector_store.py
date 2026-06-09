@@ -7,17 +7,25 @@ the top-k most semantically relevant chunks.
 """
 
 from __future__ import annotations
-import chromadb
-from pathlib import Path
-from typing import Optional
 
+from pathlib import Path
 
 CHROMA_PATH = Path(__file__).parent.parent / "data" / "chroma"
 
 
-def _client() -> chromadb.PersistentClient:
+def _chromadb():
+    """Lazy-import chromadb so the server starts without it installed."""
+    try:
+        import chromadb as _chroma  # noqa: PLC0415
+
+        return _chroma
+    except ImportError as exc:
+        raise RuntimeError("chromadb is not installed. Run: uv sync --extra full") from exc
+
+
+def _client():
     CHROMA_PATH.mkdir(parents=True, exist_ok=True)
-    return chromadb.PersistentClient(path=str(CHROMA_PATH))
+    return _chromadb().PersistentClient(path=str(CHROMA_PATH))
 
 
 def _collection_name(session_id: str) -> str:
@@ -25,7 +33,7 @@ def _collection_name(session_id: str) -> str:
     return f"session-{session_id[:8]}"
 
 
-def add_utterance(session_id: str, utterance_id: str, text: str, metadata: dict = None):
+def add_utterance(session_id: str, utterance_id: str, text: str, metadata: dict | None = None):
     """Embed and store an utterance in the session's collection."""
     client = _client()
     col = client.get_or_create_collection(name=_collection_name(session_id))
@@ -58,11 +66,13 @@ def search(session_id: str, query: str, n_results: int = 5) -> list[dict]:
 
     hits = []
     for i, doc in enumerate(results["documents"][0]):
-        hits.append({
-            "text": doc,
-            "metadata": results["metadatas"][0][i],
-            "distance": results["distances"][0][i],
-        })
+        hits.append(
+            {
+                "text": doc,
+                "metadata": results["metadatas"][0][i],
+                "distance": results["distances"][0][i],
+            }
+        )
     return hits
 
 

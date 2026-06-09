@@ -12,48 +12,70 @@ Usage:
 
 import queue
 import threading
+from collections.abc import Callable
+
 import numpy as np
-from typing import Callable, Optional
-import pyaudiowpatch as pyaudio
 
-
-SAMPLE_RATE = 16000   # whisper expects 16kHz
-CHANNELS = 1          # mono
+SAMPLE_RATE = 16000  # Whisper expects 16 kHz mono float32
 CHUNK_FRAMES = 1024
-FORMAT = pyaudio.paInt16
+_PA_INT16 = 8  # pyaudio.paInt16 — hardcoded so import is not required at module level
+_PA_CONTINUE = 0  # pyaudio.paContinue
+
+
+def _import_pyaudio():
+    """Lazy-import pyaudiowpatch; raises a clear error if not installed."""
+    try:
+        import pyaudiowpatch as pyaudio  # noqa: PLC0415
+
+        return pyaudio
+    except ImportError as exc:
+        raise RuntimeError("pyaudiowpatch is not installed. " "Run: uv sync --extra full") from exc
+
+
+def _resample(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
+    """Linear-interpolation resample — good enough for speech, zero extra deps."""
+    if from_rate == to_rate:
+        return audio
+    new_len = round(len(audio) * to_rate / from_rate)
+    return np.interp(
+        np.linspace(0, len(audio) - 1, new_len),
+        np.arange(len(audio)),
+        audio,
+    ).astype(np.float32)
 
 
 def list_devices() -> list[dict]:
     """Return all audio devices with their indices and names."""
+    pyaudio = _import_pyaudio()
     p = pyaudio.PyAudio()
     devices = []
     for i in range(p.get_device_count()):
         info = p.get_device_info_by_index(i)
-        devices.append({
-            "index": i,
-            "name": info["name"],
-            "max_input_channels": info["maxInputChannels"],
-            "max_output_channels": info["maxOutputChannels"],
-            "is_loopback": info.get("isLoopbackDevice", False),
-        })
+        devices.append(
+            {
+                "index": i,
+                "name": info["name"],
+                "max_input_channels": info["maxInputChannels"],
+                "max_output_channels": info["maxOutputChannels"],
+                "is_loopback": info.get("isLoopbackDevice", False),
+            }
+        )
     p.terminate()
     return devices
 
 
-def find_loopback_device(p: pyaudio.PyAudio) -> Optional[dict]:
+def find_loopback_device(p) -> dict | None:
     """
     Find the default WASAPI loopback device.
     Falls back to the first loopback device found.
     """
     try:
-        # pyaudiowpatch helper: get the default output device's loopback
         default_output = p.get_default_wasapi_loopback()
         if default_output:
             return default_output
     except Exception:
         pass
 
-    # Fallback: scan for any loopback device
     for i in range(p.get_device_count()):
         info = p.get_device_info_by_index(i)
         if info.get("isLoopbackDevice") and info["maxInputChannels"] > 0:
@@ -65,8 +87,7 @@ def find_loopback_device(p: pyaudio.PyAudio) -> Optional[dict]:
 class AudioCapture:
     """
     Captures audio from mic and/or system loopback.
-    Calls `callback(audio_chunk: np.ndarray)` for each chunk.
-    Chunks are float32, mono, 16kHz.
+    Delivers float32 mono 16 kHz chunks to `callback`.
     """
 
     def __init__(
@@ -81,16 +102,31 @@ class AudioCapture:
         self._queue: queue.Queue = queue.Queue()
         self._running = False
         self._threads: list[threading.Thread] = []
+        pyaudio = _import_pyaudio()
         self._p = pyaudio.PyAudio()
 
-    def _stream_callback(self, in_data, frame_count, time_info, status):
-        if in_data:
-            audio = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
-            # If stereo, mix down to mono
-            if audio.ndim > 1:
-                audio = audio.mean(axis=1)
-            self._queue.put(audio)
-        return (None, pyaudio.paContinue)
+    def _make_callback(self, n_channels: int, native_rate: int):
+        """
+        Return a per-stream PortAudio callback that normalises to
+        float32 mono 16 kHz before enqueuing.
+
+        A single shared _stream_callback cannot do this because
+        np.frombuffer always yields a 1-D array — we need to know
+        the channel count at callback creation time to reshape correctly.
+        """
+
+        def _cb(in_data, frame_count, time_info, status):
+            if in_data:
+                pcm = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
+                if n_channels > 1:
+                    # Deinterleave [L R L R …] → (frames, channels) → mean → mono
+                    pcm = pcm.reshape(-1, n_channels).mean(axis=1)
+                if native_rate != SAMPLE_RATE:
+                    pcm = _resample(pcm, native_rate, SAMPLE_RATE)
+                self._queue.put(pcm)
+            return (None, _PA_CONTINUE)
+
+        return _cb
 
     def _process_queue(self):
         while self._running or not self._queue.empty():
@@ -109,29 +145,34 @@ class AudioCapture:
             if loopback_dev is None:
                 print("[capture] WARNING: no loopback device found, system audio will be missing")
             else:
-                print(f"[capture] Loopback device: {loopback_dev['name']}")
+                n_ch = min(int(loopback_dev["maxInputChannels"]), 2)
+                native_rate = int(loopback_dev["defaultSampleRate"])
+                print(
+                    f"[capture] Loopback: {loopback_dev['name']} "
+                    f"({n_ch}ch @ {native_rate} Hz → resampled to {SAMPLE_RATE} Hz)"
+                )
                 stream = self._p.open(
-                    format=FORMAT,
-                    channels=min(loopback_dev["maxInputChannels"], 2),
-                    rate=int(loopback_dev["defaultSampleRate"]),
+                    format=_PA_INT16,
+                    channels=n_ch,
+                    rate=native_rate,
                     input=True,
                     input_device_index=int(loopback_dev["index"]),
                     frames_per_buffer=CHUNK_FRAMES,
-                    stream_callback=self._stream_callback,
+                    stream_callback=self._make_callback(n_ch, native_rate),
                 )
                 streams.append(stream)
 
         if self.use_mic:
             mic_dev = self._p.get_default_input_device_info()
-            print(f"[capture] Mic device: {mic_dev['name']}")
+            print(f"[capture] Mic: {mic_dev['name']} (mono @ {SAMPLE_RATE} Hz)")
             stream = self._p.open(
-                format=FORMAT,
+                format=_PA_INT16,
                 channels=1,
                 rate=SAMPLE_RATE,
                 input=True,
                 input_device_index=int(mic_dev["index"]),
                 frames_per_buffer=CHUNK_FRAMES,
-                stream_callback=self._stream_callback,
+                stream_callback=self._make_callback(1, SAMPLE_RATE),
             )
             streams.append(stream)
 
@@ -161,7 +202,9 @@ if __name__ == "__main__":
     print("=== Audio Device List ===")
     for d in list_devices():
         flag = " [LOOPBACK]" if d["is_loopback"] else ""
-        print(f"  [{d['index']}] {d['name']}{flag}  in={d['max_input_channels']} out={d['max_output_channels']}")
+        print(
+            f"  [{d['index']}] {d['name']}{flag}  in={d['max_input_channels']} out={d['max_output_channels']}"
+        )
 
     print("\n=== Capturing for 10 seconds (speak + play audio) ===")
     chunks_received = []
@@ -173,9 +216,9 @@ if __name__ == "__main__":
         print(f"\r  level: {bar:<40} {rms:.4f}", end="", flush=True)
 
     cap = AudioCapture(callback=on_chunk)
-    streams = cap.start()
+    cap.start()
     time.sleep(10)
     cap.stop()
 
     print(f"\n\nReceived {len(chunks_received)} chunks.")
-    print("✓ Capture test complete — check levels above for both mic and loopback.")
+    print("✓ M1 gate test — check levels above for both mic and loopback.")
