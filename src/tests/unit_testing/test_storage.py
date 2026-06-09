@@ -216,6 +216,51 @@ def test_search_utterances_empty_result():
     assert search_utterances(sid, "xylophone") == []
 
 
+# ── Session stats ─────────────────────────────────────────────────────────────
+
+
+def test_get_session_stats_empty():
+    from meeting_copilot.storage.db import create_session, get_session_stats
+
+    sid, _ = create_session("Empty meeting")
+    stats = get_session_stats(sid)
+    assert stats is not None
+    assert stats["utterance_count"] == 0
+    assert stats["word_count"] == 0
+    assert stats["answer_count"] == 0
+    assert stats["duration_seconds"] is None
+
+
+def test_get_session_stats_counts():
+    from meeting_copilot.storage.db import (
+        create_session,
+        end_session,
+        get_session_stats,
+        save_answer,
+        save_utterance,
+    )
+
+    sid, _ = create_session("Stats session")
+    save_utterance(sid, "Hello world", 0.0, 2.0)
+    save_utterance(sid, "Testing one two", 2.0, 4.0)
+    save_answer(sid, "Q?", "A.")
+    end_session(sid)
+
+    stats = get_session_stats(sid)
+    assert stats is not None
+    assert stats["utterance_count"] == 2
+    assert stats["word_count"] == 5
+    assert stats["answer_count"] == 1
+    assert stats["duration_seconds"] is not None
+    assert stats["duration_seconds"] >= 0
+
+
+def test_get_session_stats_unknown_returns_none():
+    from meeting_copilot.storage.db import get_session_stats
+
+    assert get_session_stats("00000000-0000-0000-0000-000000000000") is None
+
+
 def test_search_all_sessions_groups_by_session():
     from meeting_copilot.storage.db import (
         create_session,

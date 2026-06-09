@@ -3,6 +3,7 @@ from .db import delete_session as delete_session
 from .db import end_session as end_session
 from .db import get_answers as get_answers
 from .db import get_recent_utterances as get_recent_utterances
+from .db import get_session_stats as get_session_stats
 from .db import get_utterances as get_utterances
 from .db import init_db as init_db
 from .db import save_action_items as save_action_items

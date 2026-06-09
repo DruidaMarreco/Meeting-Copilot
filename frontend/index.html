@@ -354,6 +354,35 @@
     }
     .settings-panel .s-cancel:hover { border-color: var(--text-muted); }
 
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px;
+      font-size: 12px; color: var(--text-muted);
+    }
+    .stats-bar span { white-space: nowrap; }
+    .stats-bar strong { color: var(--text); }
+
+    /* ── Keyboard shortcuts modal ── */
+    .kbd-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .kbd-overlay.open { display: flex; }
+    .kbd-panel {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 24px 28px; width: 340px;
+    }
+    .kbd-panel h2 { font-size: 15px; font-weight: 600; margin: 0 0 14px; }
+    .kbd-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    .kbd-row:last-child { border-bottom: none; }
+    .kbd-key {
+      font-family: monospace; background: var(--border); border-radius: 4px;
+      padding: 2px 8px; font-size: 12px; color: var(--text);
+    }
+
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     @keyframes pulse  { 0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.4); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
     @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
@@ -381,7 +410,8 @@
     <h2>⚙ Settings</h2>
     <div class="s-row">
       <label for="cfg-ollama-model">Ollama model</label>
-      <input type="text" id="cfg-ollama-model" placeholder="e.g. llama3, mistral" maxlength="80" />
+      <input type="text" id="cfg-ollama-model" placeholder="e.g. llama3, mistral" maxlength="80" list="ollama-models-list" />
+      <datalist id="ollama-models-list"></datalist>
     </div>
     <div class="s-row">
       <label for="cfg-whisper-lang">Whisper language (ISO code)</label>
@@ -400,6 +430,15 @@
   <button id="btn-end" disabled>■ End</button>
   <span id="session-info"></span>
   <input type="text" id="global-search" placeholder="🔍 Search all meetings…" maxlength="120" style="margin-left:auto;" />
+</div>
+
+<div class="kbd-overlay" id="kbd-overlay">
+  <div class="kbd-panel">
+    <h2>⌨ Keyboard Shortcuts</h2>
+    <div class="kbd-row"><span>Push-to-talk</span><span class="kbd-key">Space</span></div>
+    <div class="kbd-row"><span>Show shortcuts</span><span class="kbd-key">?</span></div>
+    <div class="kbd-row"><span>Close modal</span><span class="kbd-key">Esc</span></div>
+  </div>
 </div>
 
 <div class="body">
@@ -506,6 +545,22 @@
     });
   }
 
+  // ── Keyboard shortcuts modal ──────────────────────────────────────────────
+  const kbdOverlay = document.getElementById("kbd-overlay");
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      kbdOverlay.classList.remove("open");
+      settingsOverlay.classList.remove("open");
+      return;
+    }
+    if (e.key === "?" && document.activeElement !== titleInput && document.activeElement !== globalSearch) {
+      kbdOverlay.classList.toggle("open");
+    }
+  });
+  kbdOverlay.addEventListener("click", (e) => {
+    if (e.target === kbdOverlay) kbdOverlay.classList.remove("open");
+  });
+
   // ── Health / Ollama status ─────────────────────────────────────────────────
   async function checkHealth() {
     try {
@@ -606,6 +661,25 @@
       back.textContent = "← Past meetings";
       back.addEventListener("click", loadPastSessions);
       transcript.appendChild(back);
+
+      // Stats bar (async, fills in when ready)
+      const statsBar = document.createElement("div");
+      statsBar.className = "stats-bar";
+      statsBar.innerHTML = `<span style="color:var(--text-muted)">Loading stats…</span>`;
+      transcript.appendChild(statsBar);
+      fetch(`${API}/meeting/${id}/stats`)
+        .then(r => r.json())
+        .then(s => {
+          const dur = s.duration_seconds != null
+            ? `${Math.floor(s.duration_seconds / 60)}m ${Math.round(s.duration_seconds % 60)}s`
+            : "ongoing";
+          statsBar.innerHTML = `
+            <span>⏱ <strong>${dur}</strong></span>
+            <span>🗣 <strong>${s.utterance_count}</strong> utterances</span>
+            <span>📝 <strong>${s.word_count.toLocaleString()}</strong> words</span>
+            <span>❓ <strong>${s.answer_count}</strong> Q&amp;As</span>`;
+        })
+        .catch(() => { statsBar.innerHTML = ""; });
 
       // Editable title
       const h = document.createElement("div");
@@ -1362,10 +1436,22 @@
 
   document.getElementById("btn-settings").addEventListener("click", async () => {
     try {
-      const res = await fetch(`${API}/settings`);
-      const s = await res.json();
+      const [sRes, mRes] = await Promise.all([
+        fetch(`${API}/settings`),
+        fetch(`${API}/settings/models`),
+      ]);
+      const s = await sRes.json();
       cfgOllamaModel.value = s.ollama_model || "";
       cfgWhisperLang.value = s.whisper_language || "";
+
+      const { models = [] } = await mRes.json();
+      const datalist = document.getElementById("ollama-models-list");
+      datalist.innerHTML = "";
+      models.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m;
+        datalist.appendChild(opt);
+      });
     } catch { /* best-effort pre-fill */ }
     settingsOverlay.classList.add("open");
   });

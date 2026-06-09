@@ -36,6 +36,7 @@ from meeting_copilot.llm.query import extract_action_items as llm_action_items
 from meeting_copilot.llm.query import summarize as llm_summarize
 from meeting_copilot.storage import (
     db,
+    get_session_stats,
     init_db,
     save_action_items,
     save_answer,
@@ -173,6 +174,24 @@ async def get_settings():
     return runtime_settings.get()
 
 
+@app.get("/settings/models")
+async def list_ollama_models():
+    """Return the list of models installed in Ollama, or an empty list if unavailable."""
+    try:
+        from meeting_copilot.llm.query import _ollama  # noqa: PLC0415
+
+        response = _ollama().list()
+        if hasattr(response, "models"):
+            names = [
+                getattr(m, "model", None) or getattr(m, "name", "") or "" for m in response.models
+            ]
+        else:
+            names = [m.get("model", m.get("name", "")) for m in response.get("models", [])]
+        return {"models": [n for n in names if n]}
+    except Exception:
+        return {"models": []}
+
+
 @app.patch("/settings")
 async def update_settings(req: SettingsPatch):
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
@@ -304,6 +323,15 @@ async def rename_meeting(session_id: str, req: RenameRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     db.update_session_title(session_id, title)
     return {"ok": True, "title": title}
+
+
+@app.get("/meeting/{session_id}/stats")
+async def get_meeting_stats(session_id: str):
+    """Return aggregate stats: duration, word count, utterance count, answer count."""
+    stats = get_session_stats(session_id)
+    if stats is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return stats
 
 
 @app.get("/meeting/{session_id}/answers")

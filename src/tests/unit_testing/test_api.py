@@ -527,3 +527,58 @@ def test_patch_settings_empty_body_is_noop(client):
 def test_patch_settings_readonly_key_returns_422(client):
     r = client.patch("/settings", json={"whisper_model_size": "medium"})
     assert r.status_code == 422
+
+
+def test_list_ollama_models_returns_list(client):
+    """When Ollama is unavailable (no server in CI), endpoint returns empty list gracefully."""
+    r = client.get("/settings/models")
+    assert r.status_code == 200
+    assert isinstance(r.json()["models"], list)
+
+
+# ── Meeting stats ─────────────────────────────────────────────────────────────
+
+
+def test_stats_empty_session(client):
+    sid = client.post("/meeting/start", json={"title": "Stats Test"}).json()["session_id"]
+    r = client.get(f"/meeting/{sid}/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["utterance_count"] == 0
+    assert data["word_count"] == 0
+    assert data["answer_count"] == 0
+    assert data["duration_seconds"] is None  # session not yet ended
+
+
+def test_stats_counts_utterances_and_words(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "Count Test"}).json()["session_id"]
+    db_module.save_utterance(sid, "Hello world", 0.0, 2.0)  # 2 words
+    db_module.save_utterance(sid, "One two three", 2.0, 4.0)  # 3 words
+    db_module.save_answer(sid, "Q?", "A.")
+
+    r = client.get(f"/meeting/{sid}/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["utterance_count"] == 2
+    assert data["word_count"] == 5
+    assert data["answer_count"] == 1
+
+
+def test_stats_includes_duration_when_ended(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "Duration Test"}).json()["session_id"]
+    client.post(f"/meeting/{sid}/end")
+    db_module.save_utterance(sid, "Done", 0.0, 1.0)
+
+    r = client.get(f"/meeting/{sid}/stats")
+    assert r.status_code == 200
+    assert r.json()["duration_seconds"] is not None
+    assert r.json()["duration_seconds"] >= 0
+
+
+def test_stats_unknown_session_returns_404(client):
+    r = client.get("/meeting/00000000-0000-0000-0000-000000000000/stats")
+    assert r.status_code == 404

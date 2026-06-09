@@ -204,6 +204,53 @@ def get_answers(session_id: str) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def get_session_stats(session_id: str) -> dict | None:
+    """
+    Return aggregate stats for a session:
+      duration_seconds, utterance_count, word_count, answer_count.
+    Returns None if the session doesn't exist.
+    """
+    with get_conn() as conn:
+        session = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if session is None:
+            return None
+        session = dict(session)
+
+        row = conn.execute(
+            """SELECT COUNT(*) AS utterance_count,
+                      COALESCE(SUM(LENGTH(text) - LENGTH(REPLACE(text, ' ', '')) + 1), 0) AS word_count
+               FROM utterances WHERE session_id = ?""",
+            (session_id,),
+        ).fetchone()
+        utterance_count = row["utterance_count"]
+        word_count = int(row["word_count"])
+
+        answer_count = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM answers WHERE session_id = ?", (session_id,)
+        ).fetchone()["cnt"]
+
+    # Duration: from started_at to ended_at (or None if still active)
+    duration: float | None = None
+    if session.get("ended_at") and session.get("started_at"):
+        from datetime import datetime  # noqa: PLC0415
+
+        try:
+            started = datetime.fromisoformat(session["started_at"])
+            ended = datetime.fromisoformat(session["ended_at"])
+            duration = (ended - started).total_seconds()
+        except Exception:
+            duration = None
+
+    return {
+        "session_id": session_id,
+        "title": session["title"],
+        "duration_seconds": duration,
+        "utterance_count": utterance_count,
+        "word_count": word_count,
+        "answer_count": answer_count,
+    }
+
+
 def search_all_sessions(query: str, limit: int = 50) -> list[dict]:
     """
     Search utterances across all sessions.
