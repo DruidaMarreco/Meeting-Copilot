@@ -31,13 +31,16 @@ from meeting_copilot.audio.capture import AudioCapture
 from meeting_copilot.config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER_MODEL_SIZE
 from meeting_copilot.llm.query import answer as llm_answer
 from meeting_copilot.llm.query import check_ollama
+from meeting_copilot.llm.query import extract_action_items as llm_action_items
 from meeting_copilot.llm.query import summarize as llm_summarize
 from meeting_copilot.storage import (
     db,
     init_db,
+    save_action_items,
     save_answer,
     save_summary,
     save_utterance,
+    search_utterances,
     vector_store,
 )
 from meeting_copilot.storage import delete_session as db_delete_session
@@ -400,6 +403,76 @@ async def regenerate_summary(session_id: str):
 
 
 # ── Delete ────────────────────────────────────────────────────────────────────
+
+
+# ── Action Items ──────────────────────────────────────────────────────────────
+
+
+def _stream_action_items_to_ws(session_id: str, action_items_id: str) -> None:
+    """Extract action items in a thread pool and stream tokens to WebSocket."""
+    websocket_manager.broadcast_sync(
+        session_id,
+        {"type": "action_items_start", "id": action_items_id},
+    )
+    tokens: list[str] = []
+    try:
+        for token in llm_action_items(session_id=session_id, stream=True):
+            if token:
+                tokens.append(token)
+                websocket_manager.broadcast_sync(
+                    session_id,
+                    {"type": "action_items_token", "id": action_items_id, "token": token},
+                )
+    finally:
+        full_text = "".join(tokens)
+        if full_text:
+            save_action_items(session_id, full_text)
+        websocket_manager.broadcast_sync(
+            session_id,
+            {"type": "action_items_end", "id": action_items_id, "text": full_text},
+        )
+
+
+@app.post("/meeting/{session_id}/action-items")
+async def get_action_items(session_id: str):
+    """
+    Return cached action items if available, otherwise start extraction.
+    Streams tokens via WebSocket (action_items_start / token / end).
+    """
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.get("action_items"):
+        return {"action_items_id": None, "cached": True, "text": session["action_items"]}
+
+    action_items_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _stream_action_items_to_ws, session_id, action_items_id)
+    return {"action_items_id": action_items_id, "cached": False}
+
+
+@app.post("/meeting/{session_id}/action-items/regenerate")
+async def regenerate_action_items(session_id: str):
+    """Force-regenerate action items, ignoring any cached version."""
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    action_items_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _stream_action_items_to_ws, session_id, action_items_id)
+    return {"action_items_id": action_items_id, "cached": False}
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+
+@app.get("/meeting/{session_id}/transcript/search")
+async def search_transcript(session_id: str, q: str = Query(..., min_length=1)):
+    """Search utterances in a session by keyword (case-insensitive substring match)."""
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    results = search_utterances(session_id, q)
+    return {"session_id": session_id, "query": q, "utterances": results}
 
 
 @app.delete("/meeting/{session_id}")

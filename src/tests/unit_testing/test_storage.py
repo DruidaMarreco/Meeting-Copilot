@@ -159,3 +159,68 @@ def test_delete_session_removes_answers():
     save_answer(sid, "Q?", "A.")
     delete_session(sid)
     assert get_answers(sid) == []
+
+
+# ── Action Items ──────────────────────────────────────────────────────────────
+
+
+def test_save_and_get_action_items():
+    from meeting_copilot.storage.db import create_session, get_session, save_action_items
+
+    sid, _ = create_session()
+    save_action_items(sid, "- [ ] Send report (owner: Bob)")
+    s = get_session(sid)
+    assert s is not None
+    assert s["action_items"] == "- [ ] Send report (owner: Bob)"
+
+
+def test_action_items_defaults_none():
+    from meeting_copilot.storage.db import create_session, get_session
+
+    sid, _ = create_session()
+    s = get_session(sid)
+    assert s is not None
+    assert s["action_items"] is None
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+
+def test_search_utterances_returns_matches():
+    from meeting_copilot.storage.db import create_session, save_utterance, search_utterances
+
+    sid, _ = create_session()
+    save_utterance(sid, "We need to review the contract.", 0.0, 2.0)
+    save_utterance(sid, "The budget was approved.", 3.0, 4.0)
+
+    results = search_utterances(sid, "contract")
+    assert len(results) == 1
+    assert "contract" in results[0]["text"].lower()
+
+
+def test_search_utterances_case_insensitive():
+    from meeting_copilot.storage.db import create_session, save_utterance, search_utterances
+
+    sid, _ = create_session()
+    save_utterance(sid, "Alice will handle onboarding.", 0.0, 2.0)
+
+    assert len(search_utterances(sid, "ALICE")) == 1
+
+
+def test_search_utterances_empty_result():
+    from meeting_copilot.storage.db import create_session, save_utterance, search_utterances
+
+    sid, _ = create_session()
+    save_utterance(sid, "Nothing here.", 0.0, 1.0)
+
+    assert search_utterances(sid, "xylophone") == []
+
+
+def test_search_utterances_isolated_per_session():
+    from meeting_copilot.storage.db import create_session, save_utterance, search_utterances
+
+    s1, _ = create_session()
+    s2, _ = create_session()
+    save_utterance(s1, "Budget discussion.", 0.0, 1.0)
+
+    assert search_utterances(s2, "budget") == []

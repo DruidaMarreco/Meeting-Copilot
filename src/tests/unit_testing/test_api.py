@@ -315,3 +315,95 @@ def test_delete_also_removes_answers(client):
 
     client.delete(f"/meeting/{sid}")
     assert db_module.get_answers(sid) == []
+
+
+# ── Action Items ──────────────────────────────────────────────────────────────
+
+
+def test_action_items_returns_action_items_id(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+
+    with patch("meeting_copilot.api.main._stream_action_items_to_ws"):
+        r = client.post(f"/meeting/{sid}/action-items")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cached"] is False
+    assert "action_items_id" in data
+
+
+def test_action_items_returns_cached(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_action_items(sid, "- [ ] Follow up on budget (owner: Alice)")
+
+    r = client.post(f"/meeting/{sid}/action-items")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cached"] is True
+    assert "budget" in data["text"]
+
+
+def test_action_items_regenerate_ignores_cache(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_action_items(sid, "Old action items")
+
+    with patch("meeting_copilot.api.main._stream_action_items_to_ws"):
+        r = client.post(f"/meeting/{sid}/action-items/regenerate")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cached"] is False
+    assert "action_items_id" in data
+
+
+def test_action_items_unknown_session_returns_404(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/action-items")
+    assert r.status_code == 404
+
+
+# ── Transcript Search ─────────────────────────────────────────────────────────
+
+
+def test_search_transcript_returns_matches(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_utterance(sid, "The budget is fifty thousand.", 0.0, 2.0)
+    db_module.save_utterance(sid, "We need to hire two engineers.", 3.0, 5.0)
+
+    r = client.get(f"/meeting/{sid}/transcript/search?q=budget")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["utterances"]) == 1
+    assert "budget" in data["utterances"][0]["text"].lower()
+
+
+def test_search_transcript_case_insensitive(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_utterance(sid, "Alice will follow up.", 0.0, 2.0)
+
+    r = client.get(f"/meeting/{sid}/transcript/search?q=ALICE")
+    assert r.status_code == 200
+    assert len(r.json()["utterances"]) == 1
+
+
+def test_search_transcript_no_matches(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    db_module.save_utterance(sid, "Nothing relevant here.", 0.0, 2.0)
+
+    r = client.get(f"/meeting/{sid}/transcript/search?q=xylophone")
+    assert r.status_code == 200
+    assert r.json()["utterances"] == []
+
+
+def test_search_transcript_unknown_session_returns_404(client):
+    r = client.get("/meeting/00000000-0000-0000-0000-000000000000/transcript/search?q=test")
+    assert r.status_code == 404

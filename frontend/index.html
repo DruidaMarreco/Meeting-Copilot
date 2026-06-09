@@ -267,6 +267,52 @@
     .btn-summarize:hover { background: #20264a; border-color: var(--accent); }
     .btn-summarize:disabled { opacity: 0.45; cursor: not-allowed; }
 
+    /* ── Action items ── */
+    --action-bg: #1a2218;
+    --action-border: #2a4828;
+    .action-items-card {
+      background: var(--answer-bg); border: 1px solid #2a4828;
+      border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;
+      animation: fadeIn 0.2s ease;
+    }
+    .action-items-card .ai-header {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--green); margin-bottom: 8px;
+    }
+    .action-items-card .ai-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+    .action-items-card .ai-actions { margin-top: 10px; display: flex; gap: 8px; }
+    .btn-action-items {
+      font-size: 12px; padding: 5px 12px; background: #1a2218;
+      border: 1px solid #2a4828; color: var(--green);
+      border-radius: 5px; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-action-items:hover { background: #1e2e1c; border-color: var(--green); }
+    .btn-action-items:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Search ── */
+    .search-bar {
+      display: flex; gap: 6px; margin-bottom: 10px; align-items: center;
+    }
+    .search-bar input {
+      flex: 1; min-width: 0; max-width: none;
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 6px 10px; font-size: 12px; outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-bar input:focus { border-color: var(--accent); }
+    .search-clear {
+      background: none; border: none; color: var(--text-muted); cursor: pointer;
+      font-size: 14px; padding: 2px 6px; border-radius: 4px;
+      transition: color 0.15s;
+    }
+    .search-clear:hover { color: var(--text); }
+    .utterance.hidden { display: none; }
+    .search-no-results {
+      font-size: 12px; color: var(--text-muted); padding: 8px 0;
+    }
+
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     @keyframes pulse  { 0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.4); } 50% { box-shadow: 0 0 0 10px rgba(248,113,113,0); } }
     @keyframes blink  { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
@@ -309,6 +355,7 @@
       <button id="btn-ptt" disabled title="Hold to ask a question">🎤</button>
       <div class="ptt-hint">Hold to ask · Release to send · Space</div>
       <button id="btn-summarize" class="btn-summarize" disabled style="margin-top:4px;">📋 Summarize meeting</button>
+      <button id="btn-action-items" class="btn-action-items" disabled style="margin-top:2px;">✅ Extract action items</button>
     </div>
   </div>
 </div>
@@ -322,10 +369,11 @@
   const pendingAnswers = {};
   const pendingSummaries = {};
 
-  const btnStart      = document.getElementById("btn-start");
-  const btnEnd        = document.getElementById("btn-end");
-  const btnPtt        = document.getElementById("btn-ptt");
-  const btnSummarize  = document.getElementById("btn-summarize");
+  const btnStart       = document.getElementById("btn-start");
+  const btnEnd         = document.getElementById("btn-end");
+  const btnPtt         = document.getElementById("btn-ptt");
+  const btnSummarize   = document.getElementById("btn-summarize");
+  const btnActionItems = document.getElementById("btn-action-items");
   const recDot      = document.getElementById("rec-dot");
   const recLabel    = document.getElementById("rec-label");
   const ollamaDot   = document.getElementById("ollama-dot");
@@ -334,6 +382,8 @@
   const transcript  = document.getElementById("transcript");
   const answers     = document.getElementById("answers");
   const titleInput  = document.getElementById("meeting-title");
+
+  const pendingActionItems = {};
 
   // ── Init ───────────────────────────────────────────────────────────────────
   checkHealth();
@@ -463,6 +513,10 @@
         <a class="export-btn" href="${API}/meeting/${id}/transcript/export?format=md" download>Markdown</a>`;
       transcript.appendChild(exportBar);
 
+      // Summary card and action items card (past session view)
+      const pastAiCard = buildPastActionItemsCard(id);
+      transcript.appendChild(pastAiCard);
+
       // Summary card
       const summaryCard = document.createElement("div");
       summaryCard.className = "summary-card";
@@ -491,6 +545,50 @@
       const divider = document.createElement("hr");
       divider.style.cssText = "border:none; border-top:1px solid var(--border); margin:12px 0;";
       transcript.appendChild(divider);
+
+      // Search bar (only useful when there are utterances)
+      if (data.utterances.length) {
+        const searchBar = document.createElement("div");
+        searchBar.className = "search-bar";
+        const searchInput = document.createElement("input");
+        searchInput.type = "text";
+        searchInput.placeholder = "Search transcript…";
+        const clearBtn = document.createElement("button");
+        clearBtn.className = "search-clear";
+        clearBtn.title = "Clear search";
+        clearBtn.textContent = "✕";
+        searchBar.appendChild(searchInput);
+        searchBar.appendChild(clearBtn);
+        transcript.appendChild(searchBar);
+
+        const noResultsEl = document.createElement("div");
+        noResultsEl.className = "search-no-results";
+        noResultsEl.style.display = "none";
+        noResultsEl.textContent = "No matches found.";
+        transcript.appendChild(noResultsEl);
+
+        const filterUtterances = (q) => {
+          const term = q.trim().toLowerCase();
+          const utts = transcript.querySelectorAll(".utterance");
+          let visible = 0;
+          utts.forEach(el => {
+            const text = el.querySelector(".text")?.textContent?.toLowerCase() || "";
+            if (!term || text.includes(term)) {
+              el.classList.remove("hidden");
+              visible++;
+            } else {
+              el.classList.add("hidden");
+            }
+          });
+          noResultsEl.style.display = (term && visible === 0) ? "" : "none";
+        };
+
+        searchInput.addEventListener("input", () => filterUtterances(searchInput.value));
+        clearBtn.addEventListener("click", () => {
+          searchInput.value = "";
+          filterUtterances("");
+        });
+      }
 
       if (!data.utterances.length) {
         const e = document.createElement("div");
@@ -572,6 +670,103 @@
         editBtn.onclick = () => startTitleEdit(id, titleSpan, editBtn);
       }
     });
+  }
+
+  function buildPastActionItemsCard(id) {
+    const card = document.createElement("div");
+    card.className = "action-items-card";
+    const header = document.createElement("div");
+    header.className = "ai-header";
+    header.textContent = "✅ Action Items";
+    const textEl = document.createElement("div");
+    textEl.className = "ai-text";
+    textEl.style.color = "var(--text-muted)";
+    textEl.textContent = "No action items extracted yet.";
+    const actionsEl = document.createElement("div");
+    actionsEl.className = "ai-actions";
+    const btnGen = document.createElement("button");
+    btnGen.className = "btn-action-items";
+    btnGen.textContent = "✨ Extract Action Items";
+    btnGen.addEventListener("click", () => requestActionItems(id, textEl, btnGen, false));
+    actionsEl.appendChild(btnGen);
+    card.appendChild(header);
+    card.appendChild(textEl);
+    card.appendChild(actionsEl);
+
+    // Pre-fill cached action items if available
+    fetchCachedActionItems(id, textEl, btnGen);
+    return card;
+  }
+
+  async function fetchCachedActionItems(id, textEl, btn) {
+    try {
+      const res = await fetch(`${API}/meeting/${id}/action-items`, { method: "POST" });
+      const data = await res.json();
+      if (data.cached && data.text) {
+        textEl.style.color = "var(--text)";
+        textEl.textContent = data.text;
+        btn.textContent = "↺ Regenerate";
+        btn.addEventListener("click", () => requestActionItems(id, textEl, btn, true), { once: true });
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function requestActionItems(id, textEl, btn, forceRegen) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Extracting…";
+    textEl.style.color = "var(--text-muted)";
+    textEl.textContent = "";
+
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    cursor.textContent = "▊";
+    textEl.appendChild(cursor);
+
+    try {
+      const endpoint = forceRegen
+        ? `${API}/meeting/${id}/action-items/regenerate`
+        : `${API}/meeting/${id}/action-items`;
+      const res = await fetch(endpoint, { method: "POST" });
+      const data = await res.json();
+
+      if (data.cached && data.text) {
+        cursor.remove();
+        textEl.style.color = "var(--text)";
+        textEl.textContent = data.text;
+        btn.disabled = false;
+        btn.textContent = "↺ Regenerate";
+        return;
+      }
+
+      const actionItemsId = data.action_items_id;
+      const tempWs = new WebSocket(`ws://localhost:8000/ws/${id}`);
+      tempWs.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "action_items_start" && msg.id === actionItemsId) {
+          textEl.style.color = "var(--text)";
+        }
+        if (msg.type === "action_items_token" && msg.id === actionItemsId) {
+          textEl.insertBefore(document.createTextNode(msg.token), cursor);
+        }
+        if (msg.type === "action_items_end" && msg.id === actionItemsId) {
+          cursor.remove();
+          tempWs.close();
+          btn.disabled = false;
+          btn.textContent = "↺ Regenerate";
+          btn.onclick = () => requestActionItems(id, textEl, btn, true);
+        }
+      };
+      tempWs.onerror = () => {
+        cursor.remove();
+        textEl.textContent = "Error extracting action items. Is Ollama running?";
+        btn.disabled = false;
+        btn.textContent = "↺ Retry";
+      };
+    } catch {
+      textEl.textContent = "Error extracting action items.";
+      btn.disabled = false;
+      btn.textContent = "↺ Retry";
+    }
   }
 
   async function fetchCachedSummary(id, textEl, btn) {
@@ -680,6 +875,7 @@
       btnEnd.disabled = false;
       btnPtt.disabled = false;
       btnSummarize.disabled = false;
+      btnActionItems.disabled = false;
       titleInput.disabled = true;
       setRecStatus(true, "Recording");
       sessionInfo.textContent = `Session: ${sessionId.slice(0, 8)}`;
@@ -689,13 +885,16 @@
       ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
-        if (msg.type === "utterance")      addUtterance(msg);
-        if (msg.type === "answer_start")   startAnswer(msg);
-        if (msg.type === "answer_token")   appendToken(msg);
-        if (msg.type === "answer_end")     finalizeAnswer(msg);
-        if (msg.type === "summary_start")  startActiveSummary(msg);
-        if (msg.type === "summary_token")  appendSummaryToken(msg);
-        if (msg.type === "summary_end")    finalizeActiveSummary(msg);
+        if (msg.type === "utterance")           addUtterance(msg);
+        if (msg.type === "answer_start")        startAnswer(msg);
+        if (msg.type === "answer_token")        appendToken(msg);
+        if (msg.type === "answer_end")          finalizeAnswer(msg);
+        if (msg.type === "summary_start")       startActiveSummary(msg);
+        if (msg.type === "summary_token")       appendSummaryToken(msg);
+        if (msg.type === "summary_end")         finalizeActiveSummary(msg);
+        if (msg.type === "action_items_start")  startActiveActionItems(msg);
+        if (msg.type === "action_items_token")  appendActionItemsToken(msg);
+        if (msg.type === "action_items_end")    finalizeActiveActionItems(msg);
       };
       ws.onerror = () => setRecStatus(true, "Recording (WS error)");
     } catch {
@@ -711,6 +910,7 @@
     btnEnd.disabled = true;
     btnPtt.disabled = true;
     btnSummarize.disabled = true;
+    btnActionItems.disabled = true;
     titleInput.disabled = false;
     await fetch(`${API}/meeting/${sessionId}/end`, { method: "POST" });
     if (ws) ws.close();
@@ -733,6 +933,21 @@
       showToast("Could not reach the server");
       btnSummarize.disabled = false;
       btnSummarize.textContent = "📋 Summarize meeting";
+    }
+  });
+
+  // ── Action items (active meeting) ──────────────────────────────────────────
+  btnActionItems.addEventListener("click", async () => {
+    if (!sessionId) return;
+    btnActionItems.disabled = true;
+    btnActionItems.textContent = "⏳ Extracting…";
+    try {
+      await fetch(`${API}/meeting/${sessionId}/action-items`, { method: "POST" });
+      // Tokens arrive via WebSocket (action_items_start / token / end)
+    } catch {
+      showToast("Could not reach the server");
+      btnActionItems.disabled = false;
+      btnActionItems.textContent = "✅ Extract action items";
     }
   });
 
@@ -899,6 +1114,52 @@
     if (card) card.style.borderColor = "";
     btnSummarize.disabled = false;
     btnSummarize.textContent = "📋 Summarize meeting";
+  }
+
+  function startActiveActionItems(msg) {
+    const empty = answers.querySelector(".empty");
+    if (empty) empty.remove();
+
+    const card = document.createElement("div");
+    card.className = "action-items-card";
+    card.dataset.actionItemsId = msg.id;
+    card.style.borderColor = "var(--green)";
+
+    const header = document.createElement("div");
+    header.className = "ai-header";
+    header.textContent = "✅ Action Items";
+
+    const textEl = document.createElement("div");
+    textEl.className = "ai-text";
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    cursor.textContent = "▊";
+    textEl.appendChild(cursor);
+
+    card.appendChild(header);
+    card.appendChild(textEl);
+    answers.prepend(card);
+    pendingActionItems[msg.id] = textEl;
+  }
+
+  function appendActionItemsToken(msg) {
+    const el = pendingActionItems[msg.id];
+    if (!el) return;
+    const cursor = el.querySelector(".cursor");
+    if (cursor) el.insertBefore(document.createTextNode(msg.token), cursor);
+    else el.appendChild(document.createTextNode(msg.token));
+  }
+
+  function finalizeActiveActionItems(msg) {
+    const el = pendingActionItems[msg.id];
+    if (!el) return;
+    const cursor = el.querySelector(".cursor");
+    if (cursor) cursor.remove();
+    delete pendingActionItems[msg.id];
+    const card = el.closest(".action-items-card");
+    if (card) card.style.borderColor = "";
+    btnActionItems.disabled = false;
+    btnActionItems.textContent = "✅ Extract action items";
   }
 
   function showToast(msg) {

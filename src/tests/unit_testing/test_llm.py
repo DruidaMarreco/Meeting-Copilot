@@ -176,6 +176,46 @@ def test_summarize_stream(tmp_path, monkeypatch):
     assert result == "Summary: short meeting."
 
 
+def test_extract_action_items_non_stream(tmp_path, monkeypatch):
+    import meeting_copilot.storage.db as db_module
+
+    monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
+    db_module.init_db()
+    sid, _ = db_module.create_session()
+    db_module.save_utterance(sid, "Alice will send the report by Friday.", 0.0, 3.0)
+
+    response_obj = SimpleNamespace(
+        message=SimpleNamespace(content="- [ ] Send report (owner: Alice, due: Friday)")
+    )
+    mock_mod = _mock_ollama(chat=MagicMock(return_value=response_obj))
+    with patch("meeting_copilot.llm.query._ollama", return_value=mock_mod):
+        from meeting_copilot.llm.query import extract_action_items
+
+        result = extract_action_items(sid)
+
+    assert "Alice" in result
+
+
+def test_extract_action_items_stream(tmp_path, monkeypatch):
+    import meeting_copilot.storage.db as db_module
+
+    monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
+    db_module.init_db()
+    sid, _ = db_module.create_session()
+
+    chunks = [
+        SimpleNamespace(message=SimpleNamespace(content="- [ ] ")),
+        SimpleNamespace(message=SimpleNamespace(content="Follow up.")),
+    ]
+    mock_mod = _mock_ollama(chat=MagicMock(return_value=iter(chunks)))
+    with patch("meeting_copilot.llm.query._ollama", return_value=mock_mod):
+        from meeting_copilot.llm.query import extract_action_items
+
+        result = "".join(extract_action_items(sid, stream=True))
+
+    assert result == "- [ ] Follow up."
+
+
 def test_summarize_empty_session(tmp_path, monkeypatch):
     """Summarizing a session with no utterances should still call ollama (with empty transcript note)."""
     import meeting_copilot.storage.db as db_module

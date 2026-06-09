@@ -61,6 +61,8 @@ def init_db():
         session_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
         if "summary" not in session_cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN summary TEXT")
+        if "action_items" not in session_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN action_items TEXT")
 
 
 @contextmanager
@@ -119,6 +121,14 @@ def delete_session(session_id: str):
         conn.execute("DELETE FROM utterances WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM answers WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+
+
+def save_action_items(session_id: str, action_items: str):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET action_items = ? WHERE id = ?",
+            (action_items, session_id),
+        )
 
 
 def save_summary(session_id: str, summary: str):
@@ -190,6 +200,20 @@ def get_answers(session_id: str) -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM answers WHERE session_id = ? ORDER BY created_at ASC",
             (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def search_utterances(session_id: str, query: str, limit: int = 100) -> list[dict]:
+    """Return utterances whose text contains the query string (case-insensitive)."""
+    pattern = f"%{query}%"
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM utterances
+               WHERE session_id = ? AND text LIKE ? COLLATE NOCASE
+               ORDER BY start_time ASC
+               LIMIT ?""",
+            (session_id, pattern, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 

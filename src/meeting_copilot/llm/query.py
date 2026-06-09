@@ -148,6 +148,45 @@ def summarize(
         return _extract_content(_ollama().chat(model=model, messages=messages))
 
 
+ACTION_ITEMS_PROMPT = """You are a meeting assistant. Extract all action items from the following meeting transcript.
+
+Rules:
+- List ONLY concrete tasks, commitments, or follow-ups that were explicitly mentioned.
+- Format each item as: "- [ ] <action> (owner: <name or 'unassigned'>, due: <date or 'unspecified'>)"
+- If no action items were mentioned, respond with exactly: "No action items found."
+- Do not invent tasks that were not stated. Use only what is in the transcript.
+
+Meeting transcript:
+{transcript}"""
+
+
+def extract_action_items(
+    session_id: str,
+    model: str = DEFAULT_MODEL,
+    stream: bool = False,
+) -> str | Generator[str, None, None]:
+    """Extract action items from the meeting transcript."""
+    utterances = db.get_utterances(session_id)
+    if not utterances:
+        transcript = "(No transcript available)"
+    else:
+        lines = [f"[{u['start_time']:.0f}s] {u['text']}" for u in utterances]
+        transcript = "\n".join(lines)
+
+    prompt = ACTION_ITEMS_PROMPT.format(transcript=transcript)
+    messages = [{"role": "user", "content": prompt}]
+
+    if stream:
+
+        def _stream_gen():
+            for chunk in _ollama().chat(model=model, messages=messages, stream=True):
+                yield _extract_content(chunk)
+
+        return _stream_gen()
+    else:
+        return _extract_content(_ollama().chat(model=model, messages=messages))
+
+
 def check_ollama(model: str = DEFAULT_MODEL) -> bool:
     """Return True if Ollama is running and the requested model is available."""
     try:
