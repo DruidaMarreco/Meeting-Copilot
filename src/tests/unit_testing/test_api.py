@@ -1000,3 +1000,97 @@ def test_bulk_delete_active_session(client):
 
     # Verify it's deleted
     assert client.get(f"/meeting/{s1}/stats").status_code == 404
+
+
+# ── Bulk Tag ───────────────────────────────────────────────────────────────────
+
+
+def test_bulk_add_tag(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    r = client.post("/meeting/bulk-tag", json={"session_ids": [s1, s2], "tag": "important"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert r.json()["tagged_count"] == 2
+
+    # Verify tags were added
+    tags1 = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "important" in tags1
+
+
+def test_bulk_add_tag_normalizes_case(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+
+    client.post("/meeting/bulk-tag", json={"session_ids": [s1], "tag": "IMPORTANT"})
+
+    tags = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "important" in tags
+    assert "IMPORTANT" not in tags
+
+
+def test_bulk_remove_tag(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Meeting 2"}).json()["session_id"]
+
+    # Add tags first
+    client.post("/meeting/bulk-tag", json={"session_ids": [s1, s2], "tag": "review"})
+
+    # Remove tags
+    r = client.post("/meeting/bulk-tag/remove", json={"session_ids": [s1, s2], "tag": "review"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert r.json()["untagged_count"] == 2
+
+    # Verify tags were removed
+    tags1 = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "review" not in tags1
+
+
+def test_bulk_tag_empty_list(client):
+    r = client.post("/meeting/bulk-tag", json={"session_ids": [], "tag": "test"})
+    assert r.status_code == 400
+    assert "cannot be empty" in r.json()["detail"]
+
+
+def test_bulk_tag_empty_tag(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    r = client.post("/meeting/bulk-tag", json={"session_ids": [s1], "tag": ""})
+    assert r.status_code == 422
+    assert "cannot be empty" in r.json()["detail"]
+
+
+def test_bulk_tag_skips_missing_sessions(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    unknown_id = "00000000-0000-0000-0000-000000000000"
+
+    r = client.post(
+        "/meeting/bulk-tag",
+        json={"session_ids": [s1, unknown_id], "tag": "test"},
+    )
+    assert r.status_code == 200
+    assert r.json()["tagged_count"] == 1  # Only counts existing sessions
+
+    # Verify tag was added to existing session
+    tags = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "test" in tags
+
+
+def test_bulk_remove_tag_skips_missing_sessions(client):
+    s1 = client.post("/meeting/start", json={"title": "Meeting 1"}).json()["session_id"]
+    unknown_id = "00000000-0000-0000-0000-000000000000"
+
+    # Add tag first
+    client.post("/meeting/bulk-tag", json={"session_ids": [s1], "tag": "test"})
+
+    # Remove from mix of existing and missing sessions
+    r = client.post(
+        "/meeting/bulk-tag/remove",
+        json={"session_ids": [s1, unknown_id], "tag": "test"},
+    )
+    assert r.status_code == 200
+    assert r.json()["untagged_count"] == 1
+
+    # Verify tag was removed
+    tags = client.get(f"/meeting/{s1}/tags").json()["tags"]
+    assert "test" not in tags

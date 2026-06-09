@@ -473,6 +473,11 @@ class BulkDeleteRequest(BaseModel):
     session_ids: list[str]
 
 
+class BulkTagRequest(BaseModel):
+    session_ids: list[str]
+    tag: str
+
+
 @app.get("/meeting/{session_id}/notes")
 async def get_notes(session_id: str):
     session = db.get_session(session_id)
@@ -686,6 +691,40 @@ async def bulk_delete(req: BulkDeleteRequest):
         deleted_count += 1
 
     return {"ok": True, "deleted_count": deleted_count}
+
+
+@app.post("/meeting/bulk-tag")
+async def bulk_add_tag(req: BulkTagRequest):
+    if not req.session_ids:
+        raise HTTPException(status_code=400, detail="session_ids cannot be empty")
+    if not req.tag.strip():
+        raise HTTPException(status_code=422, detail="tag cannot be empty")
+
+    tag = req.tag.strip().lower()
+    tagged_count = 0
+    for session_id in req.session_ids:
+        if db.get_session(session_id):
+            add_tag(session_id, tag)
+            tagged_count += 1
+
+    return {"ok": True, "tagged_count": tagged_count}
+
+
+@app.post("/meeting/bulk-tag/remove")
+async def bulk_remove_tag(req: BulkTagRequest):
+    if not req.session_ids:
+        raise HTTPException(status_code=400, detail="session_ids cannot be empty")
+    if not req.tag.strip():
+        raise HTTPException(status_code=422, detail="tag cannot be empty")
+
+    tag_lower = req.tag.strip().lower()
+    untagged_count = 0
+    for session_id in req.session_ids:
+        if db.get_session(session_id):
+            remove_tag(session_id, tag_lower)
+            untagged_count += 1
+
+    return {"ok": True, "untagged_count": untagged_count}
 
 
 # ── Summary ───────────────────────────────────────────────────────────────────
