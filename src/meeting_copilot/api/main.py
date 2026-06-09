@@ -33,12 +33,17 @@ from meeting_copilot.config import WHISPER_COMPUTE_TYPE, WHISPER_DEVICE, WHISPER
 from meeting_copilot.llm.query import answer as llm_answer
 from meeting_copilot.llm.query import check_ollama
 from meeting_copilot.llm.query import extract_action_items as llm_action_items
+from meeting_copilot.llm.query import generate_title as llm_generate_title
 from meeting_copilot.llm.query import summarize as llm_summarize
 from meeting_copilot.storage import (
+    add_tag,
     count_sessions,
     db,
     get_session_stats,
+    get_tags,
     init_db,
+    list_all_tags,
+    remove_tag,
     save_action_items,
     save_answer,
     save_notes,
@@ -100,6 +105,10 @@ class StartResponse(BaseModel):
     title: str
 
 
+class TagRequest(BaseModel):
+    tag: str
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -146,6 +155,19 @@ def _stop_session(session_id: str, state: dict):
     except Exception:
         pass
     db.end_session(session_id)
+
+
+def _auto_title_session(session_id: str) -> None:
+    """Generate a descriptive title from the transcript and broadcast it (best-effort)."""
+    try:
+        title = llm_generate_title(session_id)
+        db.update_session_title(session_id, title)
+        websocket_manager.broadcast_sync(
+            session_id,
+            {"type": "title_updated", "title": title},
+        )
+    except Exception:
+        pass
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -229,6 +251,11 @@ async def end_meeting(session_id: str):
         _stop_session(session_id, state)
     else:
         db.end_session(session_id)  # idempotent
+    # Auto-generate a descriptive title if the current title is still the default
+    session = db.get_session(session_id)
+    if session and session.get("title", "").startswith("Meeting "):
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _auto_title_session, session_id)
     return {"ok": True, "session_id": session_id}
 
 
@@ -302,13 +329,20 @@ async def push_to_talk(session_id: str, audio: UploadFile = File(...)):
     return {"question": question, "answer_id": answer_id}
 
 
+@app.get("/meeting/tags")
+async def get_all_tags():
+    """Return all distinct tags used across sessions."""
+    return {"tags": list_all_tags()}
+
+
 @app.get("/meeting/list")
 async def list_meetings(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    tag: str | None = Query(default=None),
 ):
-    sessions = db.list_sessions(limit=limit, offset=offset)
-    total = count_sessions()
+    sessions = db.list_sessions(limit=limit, offset=offset, tag=tag)
+    total = count_sessions(tag=tag)
     return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
 
 
@@ -332,6 +366,49 @@ async def rename_meeting(session_id: str, req: RenameRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     db.update_session_title(session_id, title)
     return {"ok": True, "title": title}
+
+
+@app.post("/meeting/{session_id}/title/generate")
+async def auto_generate_title(session_id: str):
+    """
+    Use the LLM to generate a descriptive title from the transcript and save it.
+    The update is broadcast via WebSocket (type: title_updated).
+    Returns immediately while generation runs in the background.
+    """
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _auto_title_session, session_id)
+    return {"ok": True, "session_id": session_id}
+
+
+@app.get("/meeting/{session_id}/tags")
+async def get_session_tags(session_id: str):
+    """Return all tags for a session."""
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session_id": session_id, "tags": get_tags(session_id)}
+
+
+@app.post("/meeting/{session_id}/tags")
+async def add_tag_to_meeting(session_id: str, req: TagRequest):
+    """Add a tag to a session. Tags are stored lowercase and are idempotent."""
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    tag = req.tag.strip().lower()
+    if not tag:
+        raise HTTPException(status_code=422, detail="Tag cannot be empty")
+    add_tag(session_id, tag)
+    return {"ok": True, "tag": tag, "tags": get_tags(session_id)}
+
+
+@app.delete("/meeting/{session_id}/tags/{tag}")
+async def remove_tag_from_meeting(session_id: str, tag: str):
+    """Remove a tag from a session."""
+    if not db.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    remove_tag(session_id, tag)
+    return {"ok": True, "tags": get_tags(session_id)}
 
 
 class NotesRequest(BaseModel):

@@ -332,3 +332,104 @@ def test_search_utterances_isolated_per_session():
     save_utterance(s1, "Budget discussion.", 0.0, 1.0)
 
     assert search_utterances(s2, "budget") == []
+
+
+# ── Tags ──────────────────────────────────────────────────────────────────────
+
+
+def test_add_and_get_tags():
+    from meeting_copilot.storage.db import add_tag, create_session, get_tags
+
+    sid, _ = create_session()
+    add_tag(sid, "engineering")
+    add_tag(sid, "Q3")
+    tags = get_tags(sid)
+    assert "engineering" in tags
+    assert "q3" in tags  # stored lowercase
+
+
+def test_add_tag_idempotent():
+    from meeting_copilot.storage.db import add_tag, create_session, get_tags
+
+    sid, _ = create_session()
+    add_tag(sid, "duplicate")
+    add_tag(sid, "duplicate")
+    assert get_tags(sid).count("duplicate") == 1
+
+
+def test_remove_tag():
+    from meeting_copilot.storage.db import add_tag, create_session, get_tags, remove_tag
+
+    sid, _ = create_session()
+    add_tag(sid, "remove-me")
+    remove_tag(sid, "remove-me")
+    assert "remove-me" not in get_tags(sid)
+
+
+def test_get_tags_empty():
+    from meeting_copilot.storage.db import create_session, get_tags
+
+    sid, _ = create_session()
+    assert get_tags(sid) == []
+
+
+def test_list_all_tags():
+    from meeting_copilot.storage.db import add_tag, create_session, list_all_tags
+
+    s1, _ = create_session()
+    s2, _ = create_session()
+    add_tag(s1, "alpha")
+    add_tag(s2, "beta")
+    add_tag(s1, "beta")  # same tag, different session
+    tags = list_all_tags()
+    assert "alpha" in tags
+    assert "beta" in tags
+    assert tags.count("beta") == 1  # distinct
+
+
+def test_delete_session_removes_tags():
+    from meeting_copilot.storage.db import add_tag, create_session, delete_session, get_tags
+
+    sid, _ = create_session()
+    add_tag(sid, "cleanup")
+    delete_session(sid)
+    assert get_tags(sid) == []
+
+
+def test_get_session_includes_tags():
+    from meeting_copilot.storage.db import add_tag, create_session, get_session
+
+    sid, _ = create_session()
+    add_tag(sid, "sprint")
+    s = get_session(sid)
+    assert s is not None
+    assert "sprint" in s["tags"]
+
+
+def test_list_sessions_includes_tags():
+    from meeting_copilot.storage.db import add_tag, create_session, list_sessions
+
+    sid, _ = create_session("Tagged meeting")
+    add_tag(sid, "frontend")
+    sessions = list_sessions()
+    match = next((s for s in sessions if s["id"] == sid), None)
+    assert match is not None
+    assert "frontend" in match["tags"]
+
+
+def test_list_sessions_filter_by_tag():
+    from meeting_copilot.storage.db import add_tag, count_sessions, create_session, list_sessions
+
+    s1, _ = create_session("Alpha meeting")
+    s2, _ = create_session("Beta meeting")
+    s3, _ = create_session("Gamma meeting")
+    add_tag(s1, "finance")
+    add_tag(s3, "finance")
+
+    results = list_sessions(tag="finance")
+    ids = {s["id"] for s in results}
+    assert s1 in ids and s3 in ids
+    assert s2 not in ids
+
+    total = count_sessions(tag="finance")
+    assert total == 2

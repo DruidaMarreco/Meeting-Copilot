@@ -202,6 +202,37 @@ def extract_action_items(
         return _extract_content(_ollama().chat(model=resolved, messages=messages))
 
 
+TITLE_PROMPT = """You are a meeting assistant. Generate a concise, descriptive title for the following meeting transcript.
+
+Rules:
+- The title should be 3-8 words that capture the main topic(s) discussed.
+- Do not use generic titles like "Meeting" or "Discussion" alone.
+- Do not include dates or times in the title.
+- Output ONLY the title — no quotes, no punctuation at the end, no explanation.
+- If the transcript is too short or empty, output: Untitled Meeting
+
+Meeting transcript:
+{transcript}"""
+
+
+def generate_title(
+    session_id: str,
+    model: str | None = None,
+) -> str:
+    """Generate a short descriptive title from the meeting transcript."""
+    resolved = _current_model(model)
+    utterances = db.get_utterances(session_id, limit=50)
+    if not utterances:
+        return "Untitled Meeting"
+    lines = [f"[{u['start_time']:.0f}s] {u['text']}" for u in utterances]
+    transcript = "\n".join(lines)[:2000]
+    prompt = TITLE_PROMPT.format(transcript=transcript)
+    messages = [{"role": "user", "content": prompt}]
+    result = _extract_content(_ollama().chat(model=resolved, messages=messages))
+    title = result.strip().strip('"').strip("'")
+    return title or "Untitled Meeting"
+
+
 def check_ollama(model: str | None = None) -> bool:
     """Return True if Ollama is running and the requested model is available."""
     resolved = _current_model(model)

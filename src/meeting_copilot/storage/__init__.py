@@ -1,3 +1,4 @@
+from .db import add_tag as add_tag
 from .db import count_sessions as count_sessions
 from .db import create_session as create_session
 from .db import delete_session as delete_session
@@ -5,8 +6,11 @@ from .db import end_session as end_session
 from .db import get_answers as get_answers
 from .db import get_recent_utterances as get_recent_utterances
 from .db import get_session_stats as get_session_stats
+from .db import get_tags as get_tags
 from .db import get_utterances as get_utterances
 from .db import init_db as init_db
+from .db import list_all_tags as list_all_tags
+from .db import remove_tag as remove_tag
 from .db import save_action_items as save_action_items
 from .db import save_answer as save_answer
 from .db import save_notes as save_notes

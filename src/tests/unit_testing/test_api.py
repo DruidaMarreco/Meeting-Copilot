@@ -656,3 +656,110 @@ def test_stats_includes_duration_when_ended(client):
 def test_stats_unknown_session_returns_404(client):
     r = client.get("/meeting/00000000-0000-0000-0000-000000000000/stats")
     assert r.status_code == 404
+
+
+# ── Tags ──────────────────────────────────────────────────────────────────────
+
+
+def test_add_tag_to_meeting(client):
+    sid = client.post("/meeting/start", json={"title": "Tag Test"}).json()["session_id"]
+    r = client.post(f"/meeting/{sid}/tags", json={"tag": "Engineering"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["tag"] == "engineering"  # lowercased
+    assert "engineering" in data["tags"]
+
+
+def test_add_tag_idempotent_via_api(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    client.post(f"/meeting/{sid}/tags", json={"tag": "dup"})
+    client.post(f"/meeting/{sid}/tags", json={"tag": "dup"})
+    r = client.post(f"/meeting/{sid}/tags", json={"tag": "dup"})
+    assert r.json()["tags"].count("dup") == 1
+
+
+def test_remove_tag_from_meeting(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    client.post(f"/meeting/{sid}/tags", json={"tag": "remove-me"})
+    r = client.delete(f"/meeting/{sid}/tags/remove-me")
+    assert r.status_code == 200
+    assert "remove-me" not in r.json()["tags"]
+
+
+def test_add_tag_to_unknown_session_returns_404(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/tags", json={"tag": "x"})
+    assert r.status_code == 404
+
+
+def test_remove_tag_from_unknown_session_returns_404(client):
+    r = client.delete("/meeting/00000000-0000-0000-0000-000000000000/tags/x")
+    assert r.status_code == 404
+
+
+def test_add_empty_tag_returns_422(client):
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    r = client.post(f"/meeting/{sid}/tags", json={"tag": "  "})
+    assert r.status_code == 422
+
+
+def test_get_all_tags_empty(client):
+    r = client.get("/meeting/tags")
+    assert r.status_code == 200
+    assert isinstance(r.json()["tags"], list)
+
+
+def test_get_all_tags_returns_added_tags(client):
+    s1 = client.post("/meeting/start", json={}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "alpha"})
+    client.post(f"/meeting/{s2}/tags", json={"tag": "beta"})
+    r = client.get("/meeting/tags")
+    tags = r.json()["tags"]
+    assert "alpha" in tags and "beta" in tags
+
+
+def test_list_meetings_filtered_by_tag(client):
+    s1 = client.post("/meeting/start", json={"title": "Session A"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Session B"}).json()["session_id"]
+    client.post(f"/meeting/{s1}/tags", json={"tag": "finance"})
+
+    r = client.get("/meeting/list?tag=finance")
+    assert r.status_code == 200
+    data = r.json()
+    ids = {s["id"] for s in data["sessions"]}
+    assert s1 in ids
+    assert s2 not in ids
+    assert data["total"] == 1
+
+
+def test_session_includes_tags_in_list(client):
+    sid = client.post("/meeting/start", json={"title": "With Tags"}).json()["session_id"]
+    client.post(f"/meeting/{sid}/tags", json={"tag": "product"})
+    r = client.get("/meeting/list")
+    sessions = r.json()["sessions"]
+    match = next((s for s in sessions if s["id"] == sid), None)
+    assert match is not None
+    assert "product" in match["tags"]
+
+
+# ── Auto-title ────────────────────────────────────────────────────────────────
+
+
+def test_auto_generate_title_endpoint(client):
+    """Endpoint returns 200 and queues generation (fire-and-forget, not tested here)."""
+    sid = client.post("/meeting/start", json={}).json()["session_id"]
+    with patch("meeting_copilot.api.main.llm_generate_title", return_value="Sprint Planning Q3"):
+        with (
+            patch("meeting_copilot.api.main.loop")
+            if False
+            else __import__("contextlib").nullcontext()
+        ):
+            r = client.post(f"/meeting/{sid}/title/generate")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_auto_generate_title_unknown_session(client):
+    r = client.post("/meeting/00000000-0000-0000-0000-000000000000/title/generate")
+    assert r.status_code == 404

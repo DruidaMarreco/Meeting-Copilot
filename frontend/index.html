@@ -588,12 +588,14 @@
   let _historyOffset = 0;
   let _historyTotal = 0;
   let _historySessions = [];
+  let _activeTagFilter = null;
 
   async function loadPastSessions(reset = true) {
     if (sessionId) return;
     if (reset) { _historyOffset = 0; _historySessions = []; }
     try {
-      const res = await fetch(`${API}/meeting/list?limit=${PAGE_SIZE}&offset=${_historyOffset}`);
+      const tagParam = _activeTagFilter ? `&tag=${encodeURIComponent(_activeTagFilter)}` : "";
+      const res = await fetch(`${API}/meeting/list?limit=${PAGE_SIZE}&offset=${_historyOffset}${tagParam}`);
       const data = await res.json();
       _historyTotal = data.total ?? 0;
       _historyOffset += (data.sessions || []).length;
@@ -617,12 +619,45 @@
     if (sessionId) return;
     transcript.innerHTML = "";
 
-    if (!sessions.length) { showEmptyState(); return; }
+    if (!sessions.length && !_activeTagFilter) { showEmptyState(); return; }
 
     const header = document.createElement("div");
     header.className = "history-header";
-    header.textContent = `Past meetings (${total})`;
+    header.textContent = _activeTagFilter
+      ? `Meetings tagged "${_activeTagFilter}" (${total})`
+      : `Past meetings (${total})`;
     transcript.appendChild(header);
+
+    // Tag filter bar
+    fetch(`${API}/meeting/tags`).then(r => r.json()).then(d => {
+      const tags = d.tags || [];
+      if (!tags.length) return;
+      const tagBar = document.createElement("div");
+      tagBar.style.cssText = "display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; padding:0 2px;";
+      const allChip = document.createElement("button");
+      allChip.textContent = "All";
+      allChip.style.cssText = `background:${!_activeTagFilter ? "var(--accent)" : "var(--surface)"}; color:${!_activeTagFilter ? "#fff" : "var(--text-muted)"}; border:1px solid var(--border); border-radius:12px; font-size:11px; padding:2px 9px; cursor:pointer;`;
+      allChip.addEventListener("click", () => { _activeTagFilter = null; loadPastSessions(true); });
+      tagBar.appendChild(allChip);
+      tags.forEach(tag => {
+        const chip = document.createElement("button");
+        chip.textContent = tag;
+        const active = _activeTagFilter === tag;
+        chip.style.cssText = `background:${active ? "var(--accent)" : "var(--surface)"}; color:${active ? "#fff" : "var(--text-muted)"}; border:1px solid var(--border); border-radius:12px; font-size:11px; padding:2px 9px; cursor:pointer;`;
+        chip.addEventListener("click", () => { _activeTagFilter = tag; loadPastSessions(true); });
+        tagBar.appendChild(chip);
+      });
+      transcript.insertBefore(tagBar, transcript.children[1]);
+    }).catch(() => {});
+
+    if (!sessions.length) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.style.height = "120px";
+      e.textContent = `No meetings tagged "${_activeTagFilter}"`;
+      transcript.appendChild(e);
+      return;
+    }
 
     sessions.forEach(s => {
       const item = document.createElement("div");
@@ -632,9 +667,12 @@
         ? `<span class="s-badge ended">ended</span>`
         : `<span class="s-badge ongoing">live</span>`;
 
+      const tagChips = (s.tags || []).map(t =>
+        `<span style="background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:10px;padding:1px 6px;color:var(--text-muted);">${escHtml(t)}</span>`
+      ).join(" ");
       const body = document.createElement("div");
       body.className = "s-body";
-      body.innerHTML = `<div class="s-title">${escHtml(s.title)}${badge}</div><div class="s-meta">${date}</div>`;
+      body.innerHTML = `<div class="s-title">${escHtml(s.title)}${badge}</div><div class="s-meta">${date}${tagChips ? `<span style="margin-left:6px;">${tagChips}</span>` : ""}</div>`;
       body.addEventListener("click", () => loadSession(s.id, s.title));
 
       const actions = document.createElement("div");
@@ -698,10 +736,10 @@
         })
         .catch(() => { statsBar.innerHTML = ""; });
 
-      // Editable title
+      // Editable title + auto-title button
       const h = document.createElement("div");
       h.className = "editable-title";
-      h.style.marginBottom = "10px";
+      h.style.marginBottom = "6px";
       const titleSpan = document.createElement("span");
       titleSpan.textContent = title;
       const editBtn = document.createElement("button");
@@ -709,9 +747,73 @@
       editBtn.title = "Rename session";
       editBtn.textContent = "✏️";
       editBtn.addEventListener("click", () => startTitleEdit(id, titleSpan, editBtn));
+      const autoTitleBtn = document.createElement("button");
+      autoTitleBtn.className = "edit-title-btn";
+      autoTitleBtn.title = "Auto-generate title from transcript";
+      autoTitleBtn.textContent = "✨";
+      autoTitleBtn.style.marginLeft = "2px";
+      autoTitleBtn.addEventListener("click", async () => {
+        autoTitleBtn.disabled = true;
+        autoTitleBtn.textContent = "⏳";
+        try {
+          const r = await fetch(`${API}/meeting/${id}/title/generate`, { method: "POST" });
+          if (r.ok) {
+            autoTitleBtn.textContent = "✓";
+            setTimeout(() => { autoTitleBtn.textContent = "✨"; autoTitleBtn.disabled = false; }, 8000);
+          } else {
+            autoTitleBtn.textContent = "✨"; autoTitleBtn.disabled = false;
+          }
+        } catch { autoTitleBtn.textContent = "✨"; autoTitleBtn.disabled = false; }
+      });
       h.appendChild(titleSpan);
       h.appendChild(editBtn);
+      h.appendChild(autoTitleBtn);
       transcript.appendChild(h);
+
+      // Tags row
+      const tagsRow = document.createElement("div");
+      tagsRow.style.cssText = "display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px;";
+      const renderTags = (tags) => {
+        tagsRow.innerHTML = "";
+        tags.forEach(tag => {
+          const chip = document.createElement("span");
+          chip.style.cssText = "background:var(--surface); border:1px solid var(--border); border-radius:12px; font-size:11px; padding:2px 8px; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;";
+          chip.textContent = tag;
+          const rm = document.createElement("button");
+          rm.textContent = "×";
+          rm.style.cssText = "background:none; border:none; color:var(--text-muted); cursor:pointer; padding:0; line-height:1; font-size:13px;";
+          rm.title = `Remove tag "${tag}"`;
+          rm.addEventListener("click", async () => {
+            const res = await fetch(`${API}/meeting/${id}/tags/${encodeURIComponent(tag)}`, { method: "DELETE" });
+            if (res.ok) { const d = await res.json(); renderTags(d.tags); }
+          });
+          chip.appendChild(rm);
+          tagsRow.appendChild(chip);
+        });
+        // Add-tag input
+        const addInput = document.createElement("input");
+        addInput.type = "text";
+        addInput.placeholder = "+ add tag";
+        addInput.style.cssText = "background:transparent; border:1px dashed var(--border); border-radius:12px; font-size:11px; padding:2px 8px; color:var(--text-muted); width:80px; outline:none;";
+        addInput.addEventListener("keydown", async (e) => {
+          if (e.key !== "Enter") return;
+          const t = addInput.value.trim();
+          if (!t) return;
+          const res = await fetch(`${API}/meeting/${id}/tags`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tag: t }),
+          });
+          if (res.ok) { const d = await res.json(); renderTags(d.tags); }
+        });
+        tagsRow.appendChild(addInput);
+      };
+      // Load current tags
+      fetch(`${API}/meeting/${id}/tags`)
+        .then(r => r.ok ? r.json() : { tags: [] })
+        .then(d => renderTags(d.tags || []))
+        .catch(() => renderTags([]));
+      transcript.appendChild(tagsRow);
 
       const exportBar = document.createElement("div");
       exportBar.className = "export-bar";
@@ -1206,6 +1308,11 @@
       if (msg.type === "action_items_start")  startActiveActionItems(msg);
       if (msg.type === "action_items_token")  appendActionItemsToken(msg);
       if (msg.type === "action_items_end")    finalizeActiveActionItems(msg);
+      if (msg.type === "title_updated") {
+        // Update the live title input if visible
+        if (titleInput) titleInput.value = msg.title;
+        document.title = `${msg.title} — Meeting Copilot`;
+      }
     };
 
     ws.onopen = () => {

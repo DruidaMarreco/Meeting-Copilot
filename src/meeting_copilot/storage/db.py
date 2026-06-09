@@ -2,9 +2,10 @@
 SQLite storage for meeting sessions, utterances, and Q&A answers.
 
 Schema:
-  sessions   — one row per meeting (id, title, started_at, ended_at, summary)
-  utterances — one row per transcript chunk (id, session_id, text, start_time, end_time, speaker)
-  answers    — one row per PTT Q&A exchange (id, session_id, question, answer, created_at)
+  sessions      — one row per meeting (id, title, started_at, ended_at, summary)
+  utterances    — one row per transcript chunk (id, session_id, text, start_time, end_time, speaker)
+  answers       — one row per PTT Q&A exchange (id, session_id, question, answer, created_at)
+  session_tags  — many-to-many tags for sessions (session_id, tag)
 """
 
 import sqlite3
@@ -52,10 +53,18 @@ def init_db():
                 created_at  TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS session_tags (
+                session_id  TEXT NOT NULL REFERENCES sessions(id),
+                tag         TEXT NOT NULL,
+                PRIMARY KEY (session_id, tag)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_utterances_session
                 ON utterances(session_id, start_time);
             CREATE INDEX IF NOT EXISTS idx_answers_session
                 ON answers(session_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_session_tags_tag
+                ON session_tags(tag);
         """)
         # Migrate existing databases
         session_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
@@ -107,21 +116,53 @@ def end_session(session_id: str):
 def get_session(session_id: str) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
-        return dict(row) if row else None
-
-
-def list_sessions(limit: int = 20, offset: int = 0) -> list[dict]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+        if row is None:
+            return None
+        result = dict(row)
+        tag_rows = conn.execute(
+            "SELECT tag FROM session_tags WHERE session_id = ? ORDER BY tag ASC",
+            (session_id,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        result["tags"] = [r["tag"] for r in tag_rows]
+        return result
 
 
-def count_sessions() -> int:
+def list_sessions(limit: int = 20, offset: int = 0, tag: str | None = None) -> list[dict]:
     with get_conn() as conn:
-        row = conn.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()
+        if tag:
+            rows = conn.execute(
+                """SELECT s.* FROM sessions s
+                   JOIN session_tags t ON t.session_id = s.id
+                   WHERE t.tag = ?
+                   ORDER BY s.started_at DESC LIMIT ? OFFSET ?""",
+                (tag.strip().lower(), limit, offset),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        sessions = [dict(r) for r in rows]
+        for s in sessions:
+            tag_rows = conn.execute(
+                "SELECT tag FROM session_tags WHERE session_id = ? ORDER BY tag ASC",
+                (s["id"],),
+            ).fetchall()
+            s["tags"] = [r["tag"] for r in tag_rows]
+        return sessions
+
+
+def count_sessions(tag: str | None = None) -> int:
+    with get_conn() as conn:
+        if tag:
+            row = conn.execute(
+                """SELECT COUNT(DISTINCT s.id) AS cnt FROM sessions s
+                   JOIN session_tags t ON t.session_id = s.id
+                   WHERE t.tag = ?""",
+                (tag.strip().lower(),),
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()
         return int(row["cnt"])
 
 
@@ -129,6 +170,7 @@ def delete_session(session_id: str):
     with get_conn() as conn:
         conn.execute("DELETE FROM utterances WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM answers WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM session_tags WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
 
 
@@ -316,6 +358,44 @@ def search_utterances(session_id: str, query: str, limit: int = 100) -> list[dic
             (session_id, pattern, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ── Tags ─────────────────────────────────────────────────────────────────────
+
+
+def add_tag(session_id: str, tag: str):
+    tag = tag.strip().lower()
+    if not tag:
+        raise ValueError("Tag cannot be empty")
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO session_tags (session_id, tag) VALUES (?, ?)",
+            (session_id, tag),
+        )
+
+
+def remove_tag(session_id: str, tag: str):
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM session_tags WHERE session_id = ? AND tag = ?",
+            (session_id, tag.strip().lower()),
+        )
+
+
+def get_tags(session_id: str) -> list[str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT tag FROM session_tags WHERE session_id = ? ORDER BY tag ASC",
+            (session_id,),
+        ).fetchall()
+        return [r["tag"] for r in rows]
+
+
+def list_all_tags() -> list[str]:
+    """Return all distinct tags across all sessions, sorted alphabetically."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT DISTINCT tag FROM session_tags ORDER BY tag ASC").fetchall()
+        return [r["tag"] for r in rows]
 
 
 def get_recent_utterances(session_id: str, last_n_seconds: float = 300) -> list[dict]:

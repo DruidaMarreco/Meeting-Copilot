@@ -216,6 +216,56 @@ def test_extract_action_items_stream(tmp_path, monkeypatch):
     assert result == "- [ ] Follow up."
 
 
+def test_generate_title_returns_string(tmp_path, monkeypatch):
+    import meeting_copilot.storage.db as db_module
+
+    monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
+    db_module.init_db()
+    sid, _ = db_module.create_session()
+    db_module.save_utterance(sid, "We discussed the Q3 product roadmap.", 0.0, 3.0)
+
+    response_obj = SimpleNamespace(message=SimpleNamespace(content="Q3 Product Roadmap Planning"))
+    mock_mod = _mock_ollama(chat=MagicMock(return_value=response_obj))
+    with patch("meeting_copilot.llm.query._ollama", return_value=mock_mod):
+        from meeting_copilot.llm.query import generate_title
+
+        result = generate_title(sid)
+
+    assert result == "Q3 Product Roadmap Planning"
+
+
+def test_generate_title_empty_session_returns_fallback(tmp_path, monkeypatch):
+    import meeting_copilot.storage.db as db_module
+
+    monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
+    db_module.init_db()
+    sid, _ = db_module.create_session()
+
+    # No utterances → should return fallback without calling ollama
+    from meeting_copilot.llm.query import generate_title
+
+    result = generate_title(sid)
+    assert result == "Untitled Meeting"
+
+
+def test_generate_title_strips_quotes(tmp_path, monkeypatch):
+    import meeting_copilot.storage.db as db_module
+
+    monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
+    db_module.init_db()
+    sid, _ = db_module.create_session()
+    db_module.save_utterance(sid, "Budget review meeting.", 0.0, 2.0)
+
+    response_obj = SimpleNamespace(message=SimpleNamespace(content='"Budget Review"'))
+    mock_mod = _mock_ollama(chat=MagicMock(return_value=response_obj))
+    with patch("meeting_copilot.llm.query._ollama", return_value=mock_mod):
+        from meeting_copilot.llm.query import generate_title
+
+        result = generate_title(sid)
+
+    assert result == "Budget Review"
+
+
 def test_summarize_empty_session(tmp_path, monkeypatch):
     """Summarizing a session with no utterances should still call ollama (with empty transcript note)."""
     import meeting_copilot.storage.db as db_module
