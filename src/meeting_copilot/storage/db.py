@@ -398,6 +398,115 @@ def list_all_tags() -> list[str]:
         return [r["tag"] for r in rows]
 
 
+# ── Insights ──────────────────────────────────────────────────────────────────
+
+
+def get_insights() -> dict:
+    """
+    Return aggregate insights across all sessions:
+    - Total sessions, words, utterances, answers, action items
+    - Average session length, words per session
+    - Meeting activity by day of week
+    - Most active week, most productive week by action items
+    """
+    with get_conn() as conn:
+        # Total sessions
+        session_count = conn.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()["cnt"]
+
+        # Total words, utterances, answers, action items
+        utterance_row = conn.execute("""SELECT COUNT(*) AS utterance_count,
+                      COALESCE(SUM(LENGTH(text) - LENGTH(REPLACE(text, ' ', '')) + 1), 0) AS word_count
+               FROM utterances""").fetchone()
+        utterance_count = utterance_row["utterance_count"]
+        total_words = int(utterance_row["word_count"])
+
+        answer_count = conn.execute("SELECT COUNT(*) AS cnt FROM answers").fetchone()["cnt"]
+
+        sessions_with_items = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM sessions WHERE action_items IS NOT NULL AND action_items != ''"
+        ).fetchone()["cnt"]
+
+        # Average session length (for ended sessions)
+        duration_row = conn.execute(
+            """SELECT AVG(CAST((julianday(ended_at) - julianday(started_at)) * 86400 AS FLOAT)) AS avg_seconds
+               FROM sessions WHERE ended_at IS NOT NULL"""
+        ).fetchone()
+        avg_duration_seconds = duration_row["avg_seconds"] or 0
+
+        # Activity by day of week (0=Sunday, 6=Saturday)
+        activity_by_dow = conn.execute(
+            """SELECT strftime('%w', started_at) AS dow, COUNT(*) AS count
+               FROM sessions
+               GROUP BY dow
+               ORDER BY dow ASC"""
+        ).fetchall()
+        dow_names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        busiest_by_day = {dow_names[int(r["dow"])]: r["count"] for r in activity_by_dow}
+
+        # Activity by week (ISO week number)
+        weekly_activity = conn.execute(
+            """SELECT strftime('%Y-W%W', started_at) AS week, COUNT(*) AS count
+               FROM sessions
+               GROUP BY week
+               ORDER BY week DESC
+               LIMIT 12"""
+        ).fetchall()
+        weekly = [{"week": r["week"], "meetings": r["count"]} for r in weekly_activity]
+
+        # Most common tags
+        tag_counts = conn.execute("""SELECT tag, COUNT(*) AS count
+               FROM session_tags
+               GROUP BY tag
+               ORDER BY count DESC
+               LIMIT 5""").fetchall()
+        top_tags = [{"tag": r["tag"], "count": r["count"]} for r in tag_counts]
+
+    return {
+        "total_sessions": session_count,
+        "total_utterances": utterance_count,
+        "total_words": total_words,
+        "total_answers": answer_count,
+        "sessions_with_action_items": sessions_with_items,
+        "average_session_duration_seconds": round(avg_duration_seconds, 1),
+        "activity_by_day_of_week": busiest_by_day,
+        "weekly_activity": weekly,
+        "top_tags": top_tags,
+    }
+
+
+def get_recent_insights(days: int = 7) -> dict:
+    """Return insights for the last N days (meetings, words, answers)."""
+    with get_conn() as conn:
+        cutoff = datetime.now(UTC) - __import__("datetime").timedelta(days=days)
+        cutoff_iso = cutoff.isoformat()
+
+        session_count = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM sessions WHERE started_at >= ?", (cutoff_iso,)
+        ).fetchone()["cnt"]
+
+        utterance_row = conn.execute(
+            """SELECT COUNT(*) AS utterance_count,
+                      COALESCE(SUM(LENGTH(text) - LENGTH(REPLACE(text, ' ', '')) + 1), 0) AS word_count
+               FROM utterances
+               WHERE created_at >= ?""",
+            (cutoff_iso,),
+        ).fetchone()
+        utterance_count = utterance_row["utterance_count"]
+        total_words = int(utterance_row["word_count"])
+
+        answer_count = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM answers WHERE created_at >= ?", (cutoff_iso,)
+        ).fetchone()["cnt"]
+
+    return {
+        "days": days,
+        "sessions": session_count,
+        "utterances": utterance_count,
+        "words": total_words,
+        "answers": answer_count,
+    }
+
+
 def get_recent_utterances(session_id: str, last_n_seconds: float = 300) -> list[dict]:
     """Return utterances from the last N seconds of the meeting."""
     with get_conn() as conn:

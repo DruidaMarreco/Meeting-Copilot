@@ -39,6 +39,8 @@ from meeting_copilot.storage import (
     add_tag,
     count_sessions,
     db,
+    get_insights,
+    get_recent_insights,
     get_session_stats,
     get_tags,
     init_db,
@@ -429,6 +431,21 @@ async def update_notes(session_id: str, req: NotesRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     save_notes(session_id, req.notes)
     return {"ok": True, "notes": req.notes}
+
+
+# ── Insights ──────────────────────────────────────────────────────────────────
+
+
+@app.get("/insights")
+async def get_meeting_insights():
+    """Return aggregate insights across all meetings."""
+    return get_insights()
+
+
+@app.get("/insights/recent")
+async def get_recent_meeting_insights(days: int = Query(default=7, ge=1, le=365)):
+    """Return insights for meetings in the last N days."""
+    return get_recent_insights(days=days)
 
 
 @app.get("/meeting/{session_id}/stats")

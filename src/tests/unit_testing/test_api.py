@@ -763,3 +763,49 @@ def test_auto_generate_title_endpoint(client):
 def test_auto_generate_title_unknown_session(client):
     r = client.post("/meeting/00000000-0000-0000-0000-000000000000/title/generate")
     assert r.status_code == 404
+
+
+# ── Insights ──────────────────────────────────────────────────────────────────
+
+
+def test_get_insights(client):
+    import meeting_copilot.storage.db as db_module
+
+    # Create a couple of meetings with data
+    s1 = client.post("/meeting/start", json={"title": "Standup"}).json()["session_id"]
+    db_module.save_utterance(s1, "Hello world", 0.0, 2.0)
+    db_module.save_answer(s1, "Q?", "A.")
+
+    r = client.get("/insights")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total_sessions"] >= 1
+    assert data["total_words"] >= 2
+    assert data["total_answers"] >= 1
+    assert "activity_by_day_of_week" in data
+    assert "weekly_activity" in data
+    assert "top_tags" in data
+
+
+def test_get_recent_insights(client):
+    client.post("/meeting/start", json={"title": "Recent"})
+    r = client.get("/insights/recent?days=7")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["days"] == 7
+    assert data["sessions"] >= 1
+
+
+def test_get_recent_insights_custom_days(client):
+    r = client.get("/insights/recent?days=30")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["days"] == 30
+
+
+def test_get_recent_insights_invalid_days(client):
+    r = client.get("/insights/recent?days=0")
+    assert r.status_code == 422  # validation error
+
+    r = client.get("/insights/recent?days=400")
+    assert r.status_code == 422  # exceeds max

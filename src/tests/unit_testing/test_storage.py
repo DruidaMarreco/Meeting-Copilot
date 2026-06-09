@@ -433,3 +433,45 @@ def test_list_sessions_filter_by_tag():
 
     total = count_sessions(tag="finance")
     assert total == 2
+
+
+# ── Insights ──────────────────────────────────────────────────────────────────
+
+
+def test_get_insights():
+    from meeting_copilot.storage.db import create_session, get_insights, save_answer, save_utterance
+
+    s1, _ = create_session("Meeting 1")
+    save_utterance(s1, "Hello world", 0.0, 2.0)
+    save_utterance(s1, "Testing", 2.0, 3.0)
+    save_answer(s1, "Q?", "A.")
+
+    insights = get_insights()
+    assert insights["total_sessions"] >= 1
+    assert insights["total_utterances"] >= 2
+    assert insights["total_words"] >= 3  # "hello world" + "testing"
+    assert insights["total_answers"] >= 1
+    assert "activity_by_day_of_week" in insights
+    assert "top_tags" in insights
+
+
+def test_get_recent_insights():
+    from meeting_copilot.storage.db import create_session, get_recent_insights
+
+    s1, _ = create_session("Recent meeting")
+    insights = get_recent_insights(days=7)
+    assert insights["days"] == 7
+    assert insights["sessions"] >= 1
+    assert insights["utterances"] == 0  # no utterances added
+
+
+def test_insights_include_tags():
+    from meeting_copilot.storage.db import add_tag, create_session, get_insights
+
+    s1, _ = create_session("Tagged meeting")
+    add_tag(s1, "product")
+    add_tag(s1, "planning")
+
+    insights = get_insights()
+    tags = {t["tag"] for t in insights.get("top_tags", [])}
+    assert "product" in tags or "planning" in tags  # at least one should show
