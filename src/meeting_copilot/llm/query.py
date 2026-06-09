@@ -46,8 +46,7 @@ DEFAULT_MODEL = OLLAMA_MODEL
 CONTEXT_WINDOW_SECONDS = 300  # last 5 minutes always included
 TOP_K_SEMANTIC = 5
 
-
-SYSTEM_PROMPT = """You are a meeting assistant. You can ONLY answer questions based on the meeting transcript provided below.
+_DEFAULT_QA_PROMPT = """You are a meeting assistant. You can ONLY answer questions based on the meeting transcript provided below.
 
 Rules:
 - If the answer is in the transcript, answer concisely and directly.
@@ -58,6 +57,16 @@ Rules:
 
 Meeting transcript context:
 {context}"""
+
+
+def _get_qa_system_prompt() -> str:
+    """Get the Q&A system prompt, respecting runtime customization."""
+    try:
+        from meeting_copilot import runtime_settings  # noqa: PLC0415
+
+        return runtime_settings.get_system_prompt_qa()
+    except Exception:
+        return _DEFAULT_QA_PROMPT
 
 
 def _build_context(session_id: str, question: str) -> str:
@@ -105,7 +114,8 @@ def answer(
     """
     resolved = _current_model(model)
     context = _build_context(session_id, question)
-    system = SYSTEM_PROMPT.format(context=context)
+    prompt_template = _get_qa_system_prompt()
+    system = prompt_template.format(context=context)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": question},
@@ -122,7 +132,7 @@ def answer(
         return _extract_content(_ollama().chat(model=resolved, messages=messages))
 
 
-SUMMARY_PROMPT = """You are a meeting assistant. Summarize the following meeting transcript.
+_DEFAULT_SUMMARY_PROMPT = """You are a meeting assistant. Summarize the following meeting transcript.
 
 Rules:
 - Write a concise executive summary (3-5 sentences).
@@ -132,6 +142,16 @@ Rules:
 
 Meeting transcript:
 {transcript}"""
+
+
+def _get_summary_system_prompt() -> str:
+    """Get the summary system prompt, respecting runtime customization."""
+    try:
+        from meeting_copilot import runtime_settings  # noqa: PLC0415
+
+        return runtime_settings.get_system_prompt_summary()
+    except Exception:
+        return _DEFAULT_SUMMARY_PROMPT
 
 
 def summarize(
@@ -148,7 +168,8 @@ def summarize(
         lines = [f"[{u['start_time']:.0f}s] {u['text']}" for u in utterances]
         transcript = "\n".join(lines)
 
-    prompt = SUMMARY_PROMPT.format(transcript=transcript)
+    prompt_template = _get_summary_system_prompt()
+    prompt = prompt_template.format(transcript=transcript)
     messages = [{"role": "user", "content": prompt}]
 
     if stream:
@@ -162,7 +183,7 @@ def summarize(
         return _extract_content(_ollama().chat(model=resolved, messages=messages))
 
 
-ACTION_ITEMS_PROMPT = """You are a meeting assistant. Extract all action items from the following meeting transcript.
+_DEFAULT_ACTION_ITEMS_PROMPT = """You are a meeting assistant. Extract all action items from the following meeting transcript.
 
 Rules:
 - List ONLY concrete tasks, commitments, or follow-ups that were explicitly mentioned.
@@ -172,6 +193,16 @@ Rules:
 
 Meeting transcript:
 {transcript}"""
+
+
+def _get_action_items_system_prompt() -> str:
+    """Get the action items system prompt, respecting runtime customization."""
+    try:
+        from meeting_copilot import runtime_settings  # noqa: PLC0415
+
+        return runtime_settings.get_system_prompt_action_items()
+    except Exception:
+        return _DEFAULT_ACTION_ITEMS_PROMPT
 
 
 def extract_action_items(
@@ -188,7 +219,8 @@ def extract_action_items(
         lines = [f"[{u['start_time']:.0f}s] {u['text']}" for u in utterances]
         transcript = "\n".join(lines)
 
-    prompt = ACTION_ITEMS_PROMPT.format(transcript=transcript)
+    prompt_template = _get_action_items_system_prompt()
+    prompt = prompt_template.format(transcript=transcript)
     messages = [{"role": "user", "content": prompt}]
 
     if stream:
