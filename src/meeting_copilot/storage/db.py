@@ -204,6 +204,42 @@ def get_answers(session_id: str) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def search_all_sessions(query: str, limit: int = 50) -> list[dict]:
+    """
+    Search utterances across all sessions.
+    Returns a list of dicts: {session_id, title, started_at, utterances: [...]}.
+    """
+    pattern = f"%{query}%"
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT u.*, s.title AS session_title, s.started_at AS session_started_at
+               FROM utterances u
+               JOIN sessions s ON s.id = u.session_id
+               WHERE u.text LIKE ? COLLATE NOCASE
+               ORDER BY s.started_at DESC, u.start_time ASC
+               LIMIT ?""",
+            (pattern, limit),
+        ).fetchall()
+
+    grouped: dict[str, dict] = {}
+    for r in rows:
+        r = dict(r)
+        sid = r["session_id"]
+        if sid not in grouped:
+            grouped[sid] = {
+                "session_id": sid,
+                "title": r.pop("session_title"),
+                "started_at": r.pop("session_started_at"),
+                "utterances": [],
+            }
+        else:
+            r.pop("session_title")
+            r.pop("session_started_at")
+        grouped[sid]["utterances"].append(r)
+
+    return list(grouped.values())
+
+
 def search_utterances(session_id: str, query: str, limit: int = 100) -> list[dict]:
     """Return utterances whose text contains the query string (case-insensitive)."""
     pattern = f"%{query}%"

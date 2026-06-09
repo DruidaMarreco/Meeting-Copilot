@@ -157,6 +157,22 @@ def test_export_txt(client):
     assert r.headers["content-disposition"].endswith('.txt"')
 
 
+def test_export_txt_includes_qa_and_action_items(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "Rich Export"}).json()["session_id"]
+    db_module.save_utterance(sid, "We discussed the roadmap.", 0.0, 2.0)
+    db_module.save_answer(sid, "What was decided?", "Q3 launch confirmed.")
+    db_module.save_action_items(sid, "- [ ] Write spec (owner: Alice)")
+    client.post(f"/meeting/{sid}/end")
+
+    r = client.get(f"/meeting/{sid}/transcript/export?format=txt")
+    assert r.status_code == 200
+    assert "Q3 launch confirmed." in r.text
+    assert "Write spec" in r.text
+    assert "Q: What was decided?" in r.text
+
+
 def test_export_md(client):
     import meeting_copilot.storage.db as db_module
 
@@ -168,6 +184,23 @@ def test_export_md(client):
     assert "# MD Test" in r.text
     assert "Markdown content" in r.text
     assert "[00:05]" in r.text
+
+
+def test_export_md_includes_qa_and_action_items(client):
+    import meeting_copilot.storage.db as db_module
+
+    sid = client.post("/meeting/start", json={"title": "MD Rich"}).json()["session_id"]
+    db_module.save_utterance(sid, "Planning session.", 0.0, 2.0)
+    db_module.save_answer(sid, "Budget?", "Approved at $50k.")
+    db_module.save_action_items(sid, "- [ ] Hire engineer (owner: Bob)")
+    client.post(f"/meeting/{sid}/end")
+
+    r = client.get(f"/meeting/{sid}/transcript/export?format=md")
+    assert r.status_code == 200
+    assert "## Q&A" in r.text
+    assert "Approved at $50k." in r.text
+    assert "## Action Items" in r.text
+    assert "Hire engineer" in r.text
 
 
 def test_export_unknown_session(client):
@@ -407,3 +440,39 @@ def test_search_transcript_no_matches(client):
 def test_search_transcript_unknown_session_returns_404(client):
     r = client.get("/meeting/00000000-0000-0000-0000-000000000000/transcript/search?q=test")
     assert r.status_code == 404
+
+
+# ── Cross-session search ──────────────────────────────────────────────────────
+
+
+def test_search_meetings_returns_matching_sessions(client):
+    import meeting_copilot.storage.db as db_module
+
+    s1 = client.post("/meeting/start", json={"title": "Sprint Review"}).json()["session_id"]
+    s2 = client.post("/meeting/start", json={"title": "Daily Standup"}).json()["session_id"]
+    db_module.save_utterance(s1, "We shipped the new feature.", 0.0, 2.0)
+    db_module.save_utterance(s2, "Bob is blocked on the feature branch.", 0.0, 2.0)
+    db_module.save_utterance(s2, "Nothing else to report.", 3.0, 4.0)
+
+    r = client.get("/meeting/search?q=feature")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["query"] == "feature"
+    session_ids = {s["session_id"] for s in data["sessions"]}
+    assert s1 in session_ids
+    assert s2 in session_ids
+
+    # s2 has 1 matching utterance (only "feature branch" line matches)
+    s2_result = next(s for s in data["sessions"] if s["session_id"] == s2)
+    assert len(s2_result["utterances"]) == 1
+
+
+def test_search_meetings_no_results(client):
+    r = client.get("/meeting/search?q=xylophone")
+    assert r.status_code == 200
+    assert r.json()["sessions"] == []
+
+
+def test_search_meetings_missing_query_returns_422(client):
+    r = client.get("/meeting/search")
+    assert r.status_code == 422

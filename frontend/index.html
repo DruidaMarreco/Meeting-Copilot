@@ -339,6 +339,7 @@
   <button id="btn-start">▶ Start</button>
   <button id="btn-end" disabled>■ End</button>
   <span id="session-info"></span>
+  <input type="text" id="global-search" placeholder="🔍 Search all meetings…" maxlength="120" style="margin-left:auto;" />
 </div>
 
 <div class="body">
@@ -381,13 +382,69 @@
   const sessionInfo = document.getElementById("session-info");
   const transcript  = document.getElementById("transcript");
   const answers     = document.getElementById("answers");
-  const titleInput  = document.getElementById("meeting-title");
+  const titleInput    = document.getElementById("meeting-title");
+  const globalSearch  = document.getElementById("global-search");
 
   const pendingActionItems = {};
 
   // ── Init ───────────────────────────────────────────────────────────────────
   checkHealth();
   loadPastSessions();
+
+  // ── Global search ──────────────────────────────────────────────────────────
+  let _searchTimer = null;
+  globalSearch.addEventListener("input", () => {
+    clearTimeout(_searchTimer);
+    const q = globalSearch.value.trim();
+    if (!q) { loadPastSessions(); return; }
+    _searchTimer = setTimeout(() => runGlobalSearch(q), 300);
+  });
+
+  async function runGlobalSearch(q) {
+    if (sessionId) return; // don't disrupt an active session
+    try {
+      const res = await fetch(`${API}/meeting/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      showSearchResults(data.sessions || [], q);
+    } catch {
+      showToast("Search failed");
+    }
+  }
+
+  function showSearchResults(sessions, q) {
+    transcript.innerHTML = "";
+
+    const header = document.createElement("div");
+    header.className = "history-header";
+    header.textContent = sessions.length
+      ? `Search results for "${q}"`
+      : `No results for "${q}"`;
+    transcript.appendChild(header);
+
+    if (!sessions.length) return;
+
+    sessions.forEach(s => {
+      const item = document.createElement("div");
+      item.className = "session-item";
+      const date = s.started_at
+        ? new Date(s.started_at.replace(" ", "T") + "Z").toLocaleString()
+        : "—";
+
+      const body = document.createElement("div");
+      body.className = "s-body";
+      const matchCount = s.utterances.length;
+      const preview = s.utterances.slice(0, 2).map(u => escHtml(u.text)).join(" … ");
+      body.innerHTML = `
+        <div class="s-title">${escHtml(s.title)}
+          <span class="s-badge ended">${matchCount} match${matchCount !== 1 ? "es" : ""}</span>
+        </div>
+        <div class="s-meta">${date}</div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:4px; font-style:italic;">${preview}</div>`;
+      body.addEventListener("click", () => loadSession(s.session_id, s.title));
+      item.appendChild(body);
+      transcript.appendChild(item);
+    });
+  }
 
   // ── Health / Ollama status ─────────────────────────────────────────────────
   async function checkHealth() {
@@ -882,21 +939,7 @@
       transcript.innerHTML = "";
       answers.innerHTML = "";
 
-      ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "utterance")           addUtterance(msg);
-        if (msg.type === "answer_start")        startAnswer(msg);
-        if (msg.type === "answer_token")        appendToken(msg);
-        if (msg.type === "answer_end")          finalizeAnswer(msg);
-        if (msg.type === "summary_start")       startActiveSummary(msg);
-        if (msg.type === "summary_token")       appendSummaryToken(msg);
-        if (msg.type === "summary_end")         finalizeActiveSummary(msg);
-        if (msg.type === "action_items_start")  startActiveActionItems(msg);
-        if (msg.type === "action_items_token")  appendActionItemsToken(msg);
-        if (msg.type === "action_items_end")    finalizeActiveActionItems(msg);
-      };
-      ws.onerror = () => setRecStatus(true, "Recording (WS error)");
+      connectWs(sessionId);
     } catch {
       setRecStatus(false, "Error — is the server running?");
       btnStart.disabled = false;
@@ -913,6 +956,7 @@
     btnActionItems.disabled = true;
     titleInput.disabled = false;
     await fetch(`${API}/meeting/${sessionId}/end`, { method: "POST" });
+    if (_wsRetryTimer) { clearTimeout(_wsRetryTimer); _wsRetryTimer = null; }
     if (ws) ws.close();
     setRecStatus(false, "Meeting ended");
     sessionInfo.textContent += " · ended";
@@ -950,6 +994,45 @@
       btnActionItems.textContent = "✅ Extract action items";
     }
   });
+
+  // ── WebSocket (with auto-reconnect) ───────────────────────────────────────
+  let _wsRetryDelay = 1000;
+  let _wsRetryTimer = null;
+
+  function connectWs(sid) {
+    if (!sessionId || sessionId !== sid) return; // session ended
+    ws = new WebSocket(`ws://localhost:8000/ws/${sid}`);
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "utterance")           addUtterance(msg);
+      if (msg.type === "answer_start")        startAnswer(msg);
+      if (msg.type === "answer_token")        appendToken(msg);
+      if (msg.type === "answer_end")          finalizeAnswer(msg);
+      if (msg.type === "summary_start")       startActiveSummary(msg);
+      if (msg.type === "summary_token")       appendSummaryToken(msg);
+      if (msg.type === "summary_end")         finalizeActiveSummary(msg);
+      if (msg.type === "action_items_start")  startActiveActionItems(msg);
+      if (msg.type === "action_items_token")  appendActionItemsToken(msg);
+      if (msg.type === "action_items_end")    finalizeActiveActionItems(msg);
+    };
+
+    ws.onopen = () => {
+      _wsRetryDelay = 1000; // reset backoff on successful connect
+      setRecStatus(true, "Recording");
+    };
+
+    ws.onerror = () => setRecStatus(true, "Recording (WS error)");
+
+    ws.onclose = () => {
+      if (!sessionId || sessionId !== sid) return; // intentional close
+      setRecStatus(true, `Recording (reconnecting…)`);
+      _wsRetryTimer = setTimeout(() => {
+        _wsRetryDelay = Math.min(_wsRetryDelay * 2, 30000);
+        connectWs(sid);
+      }, _wsRetryDelay);
+    };
+  }
 
   // ── PTT ────────────────────────────────────────────────────────────────────
   btnPtt.addEventListener("mousedown", startRecording);

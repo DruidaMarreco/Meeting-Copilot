@@ -216,6 +216,34 @@ def test_search_utterances_empty_result():
     assert search_utterances(sid, "xylophone") == []
 
 
+def test_search_all_sessions_groups_by_session():
+    from meeting_copilot.storage.db import (
+        create_session,
+        save_utterance,
+        search_all_sessions,
+    )
+
+    s1, _ = create_session("Alpha")
+    s2, _ = create_session("Beta")
+    save_utterance(s1, "We need to ship the product.", 0.0, 2.0)
+    save_utterance(s2, "The product demo is tomorrow.", 0.0, 2.0)
+    save_utterance(s2, "Nothing else today.", 3.0, 4.0)
+
+    results = search_all_sessions("product")
+    assert len(results) == 2
+    session_ids = {r["session_id"] for r in results}
+    assert s1 in session_ids and s2 in session_ids
+
+    s2_result = next(r for r in results if r["session_id"] == s2)
+    assert len(s2_result["utterances"]) == 1  # only "product demo" line
+
+
+def test_search_all_sessions_empty():
+    from meeting_copilot.storage.db import search_all_sessions
+
+    assert search_all_sessions("zzznotfound") == []
+
+
 def test_search_utterances_isolated_per_session():
     from meeting_copilot.storage.db import create_session, save_utterance, search_utterances
 

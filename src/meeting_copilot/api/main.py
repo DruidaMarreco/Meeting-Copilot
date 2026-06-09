@@ -40,6 +40,7 @@ from meeting_copilot.storage import (
     save_answer,
     save_summary,
     save_utterance,
+    search_all_sessions,
     search_utterances,
     vector_store,
 )
@@ -257,6 +258,13 @@ async def list_meetings():
     return {"sessions": db.list_sessions()}
 
 
+@app.get("/meeting/search")
+async def search_meetings(q: str = Query(..., min_length=1)):
+    """Search utterances across all sessions."""
+    results = search_all_sessions(q)
+    return {"query": q, "sessions": results}
+
+
 class RenameRequest(BaseModel):
     title: str
 
@@ -291,14 +299,33 @@ def _safe_filename(title: str) -> str:
     return re.sub(r"[^\w\-]", "-", title).strip("-") or "transcript"
 
 
-def _export_txt(session: dict, utterances: list[dict]) -> str:
+def _export_txt(
+    session: dict,
+    utterances: list[dict],
+    answers: list[dict] | None = None,
+) -> str:
     lines = [f"Meeting: {session['title']}", f"Date: {session['started_at'][:19]}", ""]
     for u in utterances:
         lines.append(f"[{_fmt_time(u['start_time'])}] {u['text']}")
+
+    if session.get("action_items"):
+        lines += ["", "─── Action Items ───", session["action_items"]]
+
+    if answers:
+        lines += ["", "─── Q&A ───"]
+        for a in answers:
+            lines.append(f"Q: {a['question']}")
+            lines.append(f"A: {a['answer']}")
+            lines.append("")
+
     return "\n".join(lines) + "\n"
 
 
-def _export_md(session: dict, utterances: list[dict]) -> str:
+def _export_md(
+    session: dict,
+    utterances: list[dict],
+    answers: list[dict] | None = None,
+) -> str:
     lines = [
         f"# {session['title']}",
         "",
@@ -306,10 +333,24 @@ def _export_md(session: dict, utterances: list[dict]) -> str:
         "",
         "---",
         "",
+        "## Transcript",
+        "",
     ]
     for u in utterances:
         lines.append(f"**[{_fmt_time(u['start_time'])}]** {u['text']}")
         lines.append("")
+
+    if session.get("action_items"):
+        lines += ["---", "", "## Action Items", "", session["action_items"], ""]
+
+    if answers:
+        lines += ["---", "", "## Q&A", ""]
+        for a in answers:
+            lines.append(f"**Q:** {a['question']}")
+            lines.append("")
+            lines.append(f"**A:** {a['answer']}")
+            lines.append("")
+
     return "\n".join(lines)
 
 
@@ -321,15 +362,16 @@ async def export_transcript(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     utterances = db.get_utterances(session_id)
+    answers = db.get_answers(session_id)
     name = _safe_filename(session["title"])
     if format == "md":
-        body = _export_md(session, utterances)
+        body = _export_md(session, utterances, answers)
         return Response(
             content=body,
             media_type="text/markdown; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{name}.md"'},
         )
-    body = _export_txt(session, utterances)
+    body = _export_txt(session, utterances, answers)
     return Response(
         content=body,
         media_type="text/plain; charset=utf-8",
